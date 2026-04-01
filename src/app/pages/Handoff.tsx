@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   ArrowRightLeft,
+  Bell,
   Search,
   Filter,
   Lock,
@@ -23,70 +24,99 @@ import clsx from 'clsx';
 import { toast } from 'sonner';
 import { JourneyHeader } from '@/app/components/journey/JourneyHeader';
 import { JourneyRequirementPanel } from '@/app/components/journey/JourneyRequirementPanel';
+import { useRole } from '@/app/auth/RoleContext';
 import { useJourneyStore } from '@/app/journey/JourneyContext';
 import { BASE_MEETING_SCHEDULE, buildMeetingAssignmentItems, buildJourneyScheduleItems, buildMeetingStaffLoads, formatShortAddress, parseAddressRegion, TEAM_LIST, TEAM_REGION_CONFIG } from '@/app/meeting/meetingOpsShared';
-
-// 미팅 후 업무 서류 (3종 서류)
-const POST_MEETING_DOCS = [
-  { key: 'resultReport', label: '결과 보고 (미팅 끝나자 마자)' },
-  { key: 'statusChange', label: '처리상태 변경 (팀장)' },
-  { key: 'contractInfo', label: '계약정보 반영 (팀장)' },
-  { key: 'threeDocSubmit', label: '3종 서류 제출 (마감 시)' },
-];
-
-// 청구팀 인계 체크리스트
-const CLAIM_HANDOFF_CHECKLIST = [
-  { key: 'insuranceCert', label: '증권 사본 확보' },
-  { key: 'paymentHistory', label: '지급내역서 확보' },
-  { key: 'claimAgreement', label: '청구대행 약정서' },
-  { key: 'medicalRecord', label: '진료기록 동의서' },
-  { key: 'refundCalc', label: '환급 예상액 산출 완료' },
-  { key: 'customerNotice', label: '고객 안내 완료 (환급액/일정)' },
-];
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/app/components/ui/select';
 
 // Mock Data - Enhanced
 const HANDOFF_QUEUE = [
   {
     id: 'H-001', requestId: 'R-2026-002', customer: '신하윤', status: '검토 중', completeness: 95,
-    missing: [], grade: 'A', owner: '김매니저', type: '미팅팀',
+    missing: [], owner: '김매니저', type: '미팅팀',
     postMeetingDone: 3, claimDone: 0, referralDB: false
   },
   {
     id: 'H-002', requestId: 'R-2026-001', customer: '이민호', status: '작성 중', completeness: 70,
-    missing: ['병력사항', '동의서'], grade: '-', owner: '이담당', type: '미팅팀',
+    missing: ['병력사항', '동의서'], owner: '이담당', type: '미팅팀',
     postMeetingDone: 1, claimDone: 0, referralDB: false
   },
   {
     id: 'H-003', requestId: 'R-TBDH18720260313', customer: '박영희', status: '전송됨', completeness: 100,
-    missing: [], grade: 'B', owner: '최담당', type: '청구팀',
+    missing: [], owner: '최담당', type: '청구팀',
     postMeetingDone: 4, claimDone: 6, referralDB: true
   },
   {
     id: 'H-004', requestId: 'R-2026-005', customer: '정소개', status: '소개DB', completeness: 40,
-    missing: ['보장분석', '스케줄'], grade: '-', owner: '박담당', type: '소개DB',
+    missing: ['보장분석', '스케줄'], owner: '박담당', type: '소개DB',
     postMeetingDone: 0, claimDone: 0, referralDB: true
   },
   {
     id: 'H-005', requestId: 'R-2026-006', customer: '윤서하', status: '미팅 미확정', completeness: 82,
-    missing: ['미팅 배정'], grade: 'A', owner: '김상담', type: '미팅팀',
+    missing: ['미팅 배정'], owner: '김상담', type: '미팅팀',
     postMeetingDone: 0, claimDone: 0, referralDB: false
   },
   {
     id: 'H-006', requestId: 'R-2026-007', customer: '오민재', status: '미팅 배정중', completeness: 88,
-    missing: ['시간 확정'], grade: 'A', owner: '최미팅', type: '미팅팀',
+    missing: ['시간 확정'], owner: '최미팅', type: '미팅팀',
     postMeetingDone: 0, claimDone: 0, referralDB: false
   },
   {
     id: 'H-007', requestId: 'R-2026-008', customer: '한지우', status: '미팅 미확정', completeness: 80,
-    missing: ['미팅 배정'], grade: 'A', owner: '김상담', type: '미팅팀',
+    missing: ['미팅 배정'], owner: '김상담', type: '미팅팀',
     postMeetingDone: 0, claimDone: 0, referralDB: false
   },
   {
     id: 'H-008', requestId: 'R-2026-009', customer: '서다은', status: '미팅 미확정', completeness: 84,
-    missing: ['미팅 배정'], grade: 'A', owner: '김상담', type: '미팅팀',
+    missing: ['미팅 배정'], owner: '김상담', type: '미팅팀',
     postMeetingDone: 0, claimDone: 0, referralDB: false
   },
 ];
+
+const MOCK_UNASSIGNED = [
+  {
+    id: 'REQ-001',
+    customerName: '홍길동',
+    region: '강남구',
+    type: 'refund',
+    dbCategory: 'possible',
+    callNote: '고혈압 약 복용 이력, 실손 유지 중, 환급 관심 높음',
+    handoffMemo: '목요일 오후 선호, 배우자 동석 가능성 있음',
+    handoffAt: '2026-04-01 14:30',
+  },
+  {
+    id: 'REQ-002',
+    customerName: '김영희',
+    region: '서초구',
+    type: 'intro',
+    dbCategory: 'referral',
+    callNote: '소개 케이스, 최근 입원 이력과 실손 청구 문의',
+    handoffMemo: '소개자와 동일 지역 담당자 우선 연결 요청',
+    handoffAt: '2026-04-01 15:10',
+  },
+] as const;
+
+const MOCK_SALES_MEMBERS = [
+  { id: 'sm1', name: '김영업', region: '강남구', thursdayMeetings: 2 },
+  { id: 'sm2', name: '이영업', region: '서초구', thursdayMeetings: 1 },
+  { id: 'sm3', name: '박영업', region: '마포구', thursdayMeetings: 3 },
+];
+
+const HANDOFF_TYPE_LABEL: Record<(typeof MOCK_UNASSIGNED)[number]['type'], string> = {
+  refund: '3년환급',
+  intro: '소개',
+};
+
+const HANDOFF_DB_CATEGORY_LABEL: Record<(typeof MOCK_UNASSIGNED)[number]['dbCategory'], string> = {
+  possible: '가능DB',
+  referral: '소개DB',
+};
 
 interface HandoffProps {
   onNavigate?: (path: string) => void;
@@ -100,10 +130,9 @@ function getAssignmentBadgeClass(status: string) {
 
 export function Handoff({ onNavigate }: HandoffProps) {
   const { journeys, appendAudit, assignMeetingStaff } = useJourneyStore();
+  const { currentRole } = useRole();
+  const canManageAssignment = currentRole === 'sales_lead';
   const [selectedHandoff, setSelectedHandoff] = useState<any>(null);
-  const [grade, setGrade] = useState<'A' | 'B' | 'C' | ''>('');
-  const [evidences, setEvidences] = useState<string[]>([]);
-  const [actions, setActions] = useState(['', '', '']);
   const [activeTab, setActiveTab] = useState<'all' | 'meeting' | 'claim' | 'referral'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [displayMode, setDisplayMode] = useState<'queue' | 'assignment'>('queue');
@@ -111,27 +140,11 @@ export function Handoff({ onNavigate }: HandoffProps) {
   const [selectedBoardRegion, setSelectedBoardRegion] = useState('all');
   const [selectedBoardTime, setSelectedBoardTime] = useState('all');
   const [selectedAssignmentRequestId, setSelectedAssignmentRequestId] = useState('');
-
-  // 미팅 후 업무 체크
-  const [postMeetingChecks, setPostMeetingChecks] = useState({
-    resultReport: false,
-    statusChange: false,
-    contractInfo: false,
-    threeDocSubmit: false,
-  });
-
-  // 청구팀 인계 체크
-  const [claimChecks, setClaimChecks] = useState({
-    insuranceCert: false,
-    paymentHistory: false,
-    claimAgreement: false,
-    medicalRecord: false,
-    refundCalc: false,
-    customerNotice: false,
-  });
-
-  // 소개DB 메모
-  const [referralNote, setReferralNote] = useState('');
+  const [unassignedCases, setUnassignedCases] = useState([...MOCK_UNASSIGNED]);
+  const [selectedUnassignedCaseIds, setSelectedUnassignedCaseIds] = useState<Set<string>>(new Set());
+  const [bulkAssigneeId, setBulkAssigneeId] = useState('');
+  const [notificationCount, setNotificationCount] = useState(0);
+  const [handoffMemo, setHandoffMemo] = useState('');
 
   const enrichedQueue = useMemo(() => (
     HANDOFF_QUEUE.map((item) => {
@@ -201,22 +214,7 @@ export function Handoff({ onNavigate }: HandoffProps) {
 
   const handleOpenDrawer = (item: any) => {
     setSelectedHandoff(item);
-    setGrade(item.grade === '-' ? '' : item.grade);
-    setEvidences([]);
-    setActions(['', '', '']);
-    setPostMeetingChecks({ resultReport: false, statusChange: false, contractInfo: false, threeDocSubmit: false });
-    setClaimChecks({ insuranceCert: false, paymentHistory: false, claimAgreement: false, medicalRecord: false, refundCalc: false, customerNotice: false });
-    setReferralNote('');
-  };
-
-  const toggleEvidence = (tag: string) => {
-    setEvidences(prev => prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag]);
-  };
-
-  const updateAction = (index: number, val: string) => {
-    const newActions = [...actions];
-    newActions[index] = val;
-    setActions(newActions);
+    setHandoffMemo('');
   };
 
   // Filter by tab
@@ -230,40 +228,74 @@ export function Handoff({ onNavigate }: HandoffProps) {
     return true;
   });
 
-  const postMeetingCount = Object.values(postMeetingChecks).filter(Boolean).length;
-  const claimCheckCount = Object.values(claimChecks).filter(Boolean).length;
   const selectedJourney = selectedHandoff?.requestId ? journeys[selectedHandoff.requestId] : undefined;
-  const selectedBlockCount = selectedJourney?.missingRequirements.filter((entry) => entry.severity === 'block').length || 0;
+  const handoffMissingItems = useMemo(() => {
+    if (!selectedHandoff) return [];
 
-  // 인계 Gate 조건
-  const canHandoff = useMemo(() => {
-    if (!selectedHandoff) return false;
-    if (selectedBlockCount > 0) return false;
-    if (selectedHandoff.type === '미팅팀') {
-      return postMeetingCount === POST_MEETING_DOCS.length;
-    }
-    if (selectedHandoff.type === '청구팀') {
-      return postMeetingCount === POST_MEETING_DOCS.length && claimCheckCount === CLAIM_HANDOFF_CHECKLIST.length;
-    }
-    if (selectedHandoff.type === '소개DB') {
-      return referralNote.trim().length > 0;
-    }
-    return true;
-  }, [selectedHandoff, selectedBlockCount, postMeetingCount, claimCheckCount, referralNote]);
+    const journeyMissing = selectedJourney?.missingRequirements
+      .filter((entry) => entry.severity === 'block')
+      .map((entry) => entry.label) || [];
+    const queueMissing = selectedHandoff.missing || [];
+    const memoMissing = handoffMemo.trim() ? [] : ['인계 메모 미입력'];
 
-  const handoffBlockReason = useMemo(() => {
-    if (!selectedHandoff) return '';
-    const reasons: string[] = [];
-    if (selectedBlockCount > 0) reasons.push(`필수 요건 ${selectedBlockCount}건 미충족`);
-    if (postMeetingCount < POST_MEETING_DOCS.length) reasons.push(`미팅 후 업무 ${POST_MEETING_DOCS.length - postMeetingCount}건 미완료`);
-    if (selectedHandoff.type === '청구팀' && claimCheckCount < CLAIM_HANDOFF_CHECKLIST.length) {
-      reasons.push(`청구 인계 ${CLAIM_HANDOFF_CHECKLIST.length - claimCheckCount}건 미완료`);
+    return Array.from(new Set([...journeyMissing, ...queueMissing, ...memoMissing]));
+  }, [handoffMemo, selectedHandoff, selectedJourney]);
+
+  const canHandoff = handoffMissingItems.length === 0;
+  const handoffBlockReason = handoffMissingItems.join(' · ');
+
+  const handleAssign = (caseId: string, memberId: string) => {
+    if (!canManageAssignment) {
+      toast.error('영업팀장만 배정할 수 있습니다.');
+      return;
     }
-    if (selectedHandoff.type === '소개DB' && !referralNote.trim()) {
-      reasons.push('소개DB 메모 미입력');
+
+    const member = MOCK_SALES_MEMBERS.find((item) => item.id === memberId);
+    if (!member) return;
+
+    setUnassignedCases((current) => current.filter((item) => item.id !== caseId));
+    setSelectedUnassignedCaseIds((current) => {
+      const next = new Set(current);
+      next.delete(caseId);
+      return next;
+    });
+    setNotificationCount((current) => current + 1);
+    toast.success(`배정 완료: ${member.name}에게 ${caseId} 배정됨`);
+  };
+
+  const toggleUnassignedCase = (caseId: string) => {
+    setSelectedUnassignedCaseIds((current) => {
+      const next = new Set(current);
+      if (next.has(caseId)) next.delete(caseId);
+      else next.add(caseId);
+      return next;
+    });
+  };
+
+  const toggleAllUnassignedCases = () => {
+    if (selectedUnassignedCaseIds.size === unassignedCases.length) {
+      setSelectedUnassignedCaseIds(new Set());
+      return;
     }
-    return reasons.join(' · ');
-  }, [selectedHandoff, selectedBlockCount, postMeetingCount, claimCheckCount, referralNote]);
+
+    setSelectedUnassignedCaseIds(new Set(unassignedCases.map((item) => item.id)));
+  };
+
+  const handleBulkAssign = () => {
+    if (!canManageAssignment) {
+      toast.error('영업팀장만 배정할 수 있습니다.');
+      return;
+    }
+
+    const member = MOCK_SALES_MEMBERS.find((item) => item.id === bulkAssigneeId);
+    if (!member || selectedUnassignedCaseIds.size === 0) return;
+
+    setUnassignedCases((current) => current.filter((item) => !selectedUnassignedCaseIds.has(item.id)));
+    setNotificationCount((current) => current + selectedUnassignedCaseIds.size);
+    toast.success(`일괄 배정 완료: ${member.name}에게 ${selectedUnassignedCaseIds.size}건 배정됨`);
+    setSelectedUnassignedCaseIds(new Set());
+    setBulkAssigneeId('');
+  };
 
   return (
     <div className="flex flex-col h-full bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
@@ -273,13 +305,27 @@ export function Handoff({ onNavigate }: HandoffProps) {
           <h2 className="font-bold text-[#1e293b]">이관(Handoff) 관리</h2>
           <p className="text-xs text-slate-500 mt-1">DB 가공, 미팅팀/청구팀 전달, 소개DB 관리</p>
         </div>
-        <div className="flex gap-3">
+        <div className="flex items-center gap-3">
+          <button className="relative rounded-full border border-slate-200 bg-white p-2 text-slate-500 transition-colors hover:bg-slate-50 hover:text-slate-700">
+            <Bell size={18} />
+            {notificationCount > 0 && (
+              <span className="absolute -right-1 -top-1 inline-flex min-w-5 items-center justify-center rounded-full bg-rose-500 px-1.5 py-0.5 text-[10px] font-bold text-white">
+                {notificationCount}
+              </span>
+            )}
+          </button>
           <div className="relative">
              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
              <input value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} type="text" placeholder="고객명/주소 검색..." className="pl-9 pr-4 py-2 border border-slate-300 rounded-lg text-sm w-56 focus:outline-none focus:ring-2 focus:ring-[#0f766e]" />
           </div>
         </div>
       </div>
+
+      {!canManageAssignment && (
+        <div className="border-b border-amber-200 bg-amber-50 px-6 py-3 text-sm text-amber-800">
+          현재 역할은 이 화면을 조회만 할 수 있습니다. 배정 액션은 영업팀장에게만 열려 있습니다.
+        </div>
+      )}
 
       {/* Tab Filter */}
       <div className="px-6 py-2 border-b border-slate-100 flex gap-2">
@@ -341,6 +387,120 @@ export function Handoff({ onNavigate }: HandoffProps) {
 
       {displayMode === 'queue' ? (
         <div className="flex-1 overflow-auto">
+          <div className="border-b border-slate-200 bg-slate-50/70 px-6 py-5">
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-bold text-[#1e293b]">미배정 케이스</h3>
+                <p className="mt-1 text-xs text-slate-500">콜팀에서 넘어온 미팅 인계 대기 건을 영업팀원에게 배정합니다.</p>
+              </div>
+              <div className="flex items-center gap-2">
+                {selectedUnassignedCaseIds.size > 0 ? (
+                  <>
+                    <Select value={bulkAssigneeId} onValueChange={setBulkAssigneeId}>
+                      <SelectTrigger className="w-[220px] bg-white">
+                        <SelectValue placeholder="일괄 배정 담당자 선택" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {MOCK_SALES_MEMBERS.map((member) => (
+                          <SelectItem key={member.id} value={member.id}>
+                            {member.name} — {member.region}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <button
+                      onClick={handleBulkAssign}
+                      disabled={!bulkAssigneeId}
+                      className="rounded-lg bg-[#1e293b] px-3 py-2 text-xs font-bold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500"
+                    >
+                      일괄 배정
+                    </button>
+                  </>
+                ) : null}
+                <span className="rounded-full bg-white px-3 py-1 text-xs font-bold text-slate-600 border border-slate-200">
+                  {unassignedCases.length}건 대기
+                </span>
+              </div>
+            </div>
+
+            {unassignedCases.length > 0 ? (
+              <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+                <table className="min-w-full text-sm">
+                  <thead className="bg-slate-50 text-left text-xs text-slate-500">
+                    <tr>
+                      <th className="px-4 py-3 font-medium">
+                        <input
+                          type="checkbox"
+                          checked={selectedUnassignedCaseIds.size === unassignedCases.length && unassignedCases.length > 0}
+                          onChange={toggleAllUnassignedCases}
+                          className="rounded border-slate-300"
+                        />
+                      </th>
+                      <th className="px-4 py-3 font-medium">고객명</th>
+                      <th className="px-4 py-3 font-medium">지역</th>
+                      <th className="px-4 py-3 font-medium">유형</th>
+                      <th className="px-4 py-3 font-medium">DB분류</th>
+                      <th className="px-4 py-3 font-medium">병력/보험 요약</th>
+                      <th className="px-4 py-3 font-medium">인계 메모</th>
+                      <th className="px-4 py-3 font-medium">인계 시각</th>
+                      <th className="px-4 py-3 font-medium">담당자 배정</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {unassignedCases.map((item) => (
+                      <tr key={item.id} className="hover:bg-slate-50">
+                        <td className="px-4 py-4">
+                          <input
+                            type="checkbox"
+                            checked={selectedUnassignedCaseIds.has(item.id)}
+                            onChange={() => toggleUnassignedCase(item.id)}
+                            className="rounded border-slate-300"
+                          />
+                        </td>
+                        <td className="px-4 py-4 font-semibold text-slate-900">{item.customerName}</td>
+                        <td className="px-4 py-4 font-bold text-slate-800">{item.region}</td>
+                        <td className="px-4 py-4">
+                          <span className="rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-[10px] font-bold text-blue-700">
+                            {HANDOFF_TYPE_LABEL[item.type]}
+                          </span>
+                        </td>
+                        <td className="px-4 py-4">
+                          <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700">
+                            {HANDOFF_DB_CATEGORY_LABEL[item.dbCategory]}
+                          </span>
+                        </td>
+                        <td className="px-4 py-4 text-slate-600">{item.callNote}</td>
+                        <td className="px-4 py-4 text-slate-600">{item.handoffMemo}</td>
+                        <td className="px-4 py-4 text-xs text-slate-500">{item.handoffAt}</td>
+                        <td className="px-4 py-4">
+                          <Select
+                            disabled={!canManageAssignment}
+                            onValueChange={(memberId) => handleAssign(item.id, memberId)}
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="담당자 배정" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {MOCK_SALES_MEMBERS.map((member) => (
+                                <SelectItem key={member.id} value={member.id}>
+                                  {member.name} — {member.region} — 목요일 미팅 {member.thursdayMeetings}건
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-4 py-10 text-center text-sm text-slate-400">
+                현재 미배정 케이스가 없습니다.
+              </div>
+            )}
+          </div>
+
           <table className="w-full text-sm text-left">
             <thead className="text-xs text-slate-500 uppercase bg-slate-50 border-b border-slate-200 sticky top-0">
               <tr>
@@ -349,7 +509,6 @@ export function Handoff({ onNavigate }: HandoffProps) {
                 <th className="px-6 py-3 font-medium">상태</th>
                 <th className="px-6 py-3 font-medium">데이터 완결성</th>
                 <th className="px-6 py-3 font-medium">누락 필드</th>
-                <th className="px-6 py-3 font-medium">목표 등급</th>
                 <th className="px-6 py-3 font-medium">처리자</th>
                 <th className="px-6 py-3 font-medium text-right">작업</th>
               </tr>
@@ -404,9 +563,6 @@ export function Handoff({ onNavigate }: HandoffProps) {
                      ) : (
                         <span className="text-xs text-green-600 font-medium flex items-center gap-1"><CheckCircle2 size={12}/> 완료(Ready)</span>
                      )}
-                  </td>
-                  <td className="px-6 py-4">
-                     {item.grade !== '-' && <span className="size-6 flex items-center justify-center rounded bg-slate-100 font-bold text-slate-700 border border-slate-200 text-xs">{item.grade}</span>}
                   </td>
                   <td className="px-6 py-4 text-slate-600">{item.owner}</td>
                   <td className="px-6 py-4 text-right">
@@ -584,10 +740,10 @@ export function Handoff({ onNavigate }: HandoffProps) {
                           <span className="rounded-full bg-teal-50 px-2 py-1 text-[10px] font-bold text-teal-700">권역 최적</span>
                         )}
                       </div>
-                      <button
-                        onClick={() => {
-                          const parsed = parseAddressRegion(selectedAssignmentItem.rawAddress);
-                          assignMeetingStaff(selectedAssignmentItem.requestId, {
+                        <button
+                          onClick={() => {
+                            const parsed = parseAddressRegion(selectedAssignmentItem.rawAddress);
+                            assignMeetingStaff(selectedAssignmentItem.requestId, {
                             meetingLocation: selectedAssignmentItem.rawAddress,
                             assignedTeam: staff.team,
                             assignedStaff: staff.staffName,
@@ -596,17 +752,19 @@ export function Handoff({ onNavigate }: HandoffProps) {
                             regionLevel2: parsed.regionLevel2,
                           }, '이관관리');
                           toast.success(`${staff.team} ${staff.staffName}에게 배정했습니다.`);
-                        }}
-                        disabled={isAssigned}
-                        className={clsx(
-                          "mt-4 w-full rounded-lg px-3 py-2 text-sm font-bold transition-colors",
-                          isAssigned ? "bg-slate-100 text-slate-400 cursor-not-allowed" : "bg-[#0f766e] text-white hover:bg-[#0d6b63]"
-                        )}
-                      >
-                        {isAssigned ? '현재 배정됨' : '배정하기'}
-                      </button>
-                    </div>
-                  );
+                          }}
+                          disabled={isAssigned || !canManageAssignment}
+                          className={clsx(
+                            "mt-4 w-full rounded-lg px-3 py-2 text-sm font-bold transition-colors",
+                            isAssigned || !canManageAssignment
+                              ? "bg-slate-100 text-slate-400 cursor-not-allowed"
+                              : "bg-[#0f766e] text-white hover:bg-[#0d6b63]"
+                          )}
+                        >
+                          {isAssigned ? '현재 배정됨' : !canManageAssignment ? '권한 필요' : '배정하기'}
+                        </button>
+                      </div>
+                    );
                 })}
               </div>
             ) : (
@@ -660,213 +818,32 @@ export function Handoff({ onNavigate }: HandoffProps) {
                   </>
                )}
 
-               {/* 1. Grade Assignment */}
-               <section>
-                  <h3 className="text-sm font-bold text-[#1e293b] mb-3 flex items-center gap-2">
-                     <span className="flex items-center justify-center size-5 bg-slate-200 rounded-full text-[10px]">1</span>
-                     DB 가공 품질 등급
-                  </h3>
-                  <div className="flex gap-4">
-                     {['A', 'B', 'C'].map((g) => (
-                        <button
-                           key={g}
-                           onClick={() => setGrade(g as any)}
-                           className={clsx(
-                              "flex-1 py-4 rounded-xl border-2 text-lg font-bold transition-all",
-                              grade === g
-                                 ? "border-[#0f766e] bg-teal-50 text-[#0f766e] shadow-sm"
-                                 : "border-slate-200 bg-white text-slate-400 hover:border-slate-300"
-                           )}
-                        >
-                           {g}
-                        </button>
-                     ))}
-                  </div>
-               </section>
-
-               {/* 2. Evidence Tags */}
-               <section>
-                  <h3 className="text-sm font-bold text-[#1e293b] mb-3 flex items-center gap-2">
-                     <span className="flex items-center justify-center size-5 bg-slate-200 rounded-full text-[10px]">2</span>
-                     확보된 증거 자료 (다중 선택)
-                  </h3>
-                  <div className="flex flex-wrap gap-2">
-                     {['지역 검증됨', '결정권자 확인됨', '보험내역 확인됨', '동의서 서명완료', '병력사항 체크됨', '증권 사본 확보', '지급내역서 확보'].map((tag) => (
-                        <button
-                           key={tag}
-                           onClick={() => toggleEvidence(tag)}
-                           className={clsx(
-                              "px-3 py-1.5 rounded-full text-xs font-medium border transition-colors",
-                              evidences.includes(tag)
-                                 ? "bg-[#0f766e] text-white border-[#0f766e]"
-                                 : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
-                           )}
-                        >
-                           {tag}
-                        </button>
-                     ))}
-                  </div>
-               </section>
-
-               {/* 3. 미팅 후 업무 체크리스트 (from Notion) */}
-               <section>
-                  <h3 className="text-sm font-bold text-[#1e293b] mb-3 flex items-center gap-2">
-                     <span className="flex items-center justify-center size-5 bg-slate-200 rounded-full text-[10px]">3</span>
-                     미팅 후 업무 체크
-                     <span className={clsx(
-                       "text-[9px] font-bold px-1.5 py-0.5 rounded-full ml-auto",
-                       postMeetingCount === POST_MEETING_DOCS.length ? "bg-emerald-100 text-emerald-600" : "bg-slate-100 text-slate-400"
-                     )}>
-                       {postMeetingCount}/{POST_MEETING_DOCS.length}
-                     </span>
-                  </h3>
-                  <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
-                     {POST_MEETING_DOCS.map(({ key, label }) => (
-                        <div
-                           key={key}
-                           onClick={() => setPostMeetingChecks(prev => ({ ...prev, [key]: !prev[key as keyof typeof postMeetingChecks] }))}
-                           className="flex items-center justify-between px-3 py-2.5 border-b border-slate-100 last:border-b-0 hover:bg-slate-50 cursor-pointer transition-colors"
-                        >
-                           <span className="text-xs text-slate-600">{label}</span>
-                           <div className={clsx(
-                              "size-4 rounded border flex items-center justify-center transition-colors",
-                              postMeetingChecks[key as keyof typeof postMeetingChecks]
-                                 ? "bg-emerald-600 border-emerald-600"
-                                 : "bg-white border-slate-300"
-                           )}>
-                              {postMeetingChecks[key as keyof typeof postMeetingChecks] && <Check size={12} className="text-white" />}
-                           </div>
-                        </div>
-                     ))}
-                  </div>
-               </section>
-
-               {/* 4. 청구팀 인계 체크리스트 */}
-               {(selectedHandoff.type === '청구팀' || activeTab === 'claim') && (
-                  <section>
-                     <h3 className="text-sm font-bold text-[#1e293b] mb-3 flex items-center gap-2">
-                        <span className="flex items-center justify-center size-5 bg-emerald-100 text-emerald-700 rounded-full text-[10px]">4</span>
-                        청구팀 인계 체크리스트
-                        <span className={clsx(
-                          "text-[9px] font-bold px-1.5 py-0.5 rounded-full ml-auto",
-                          claimCheckCount === CLAIM_HANDOFF_CHECKLIST.length ? "bg-emerald-100 text-emerald-600" : "bg-slate-100 text-slate-400"
-                        )}>
-                          {claimCheckCount}/{CLAIM_HANDOFF_CHECKLIST.length}
-                        </span>
-                     </h3>
-                     <div className="bg-white rounded-lg border border-emerald-200 overflow-hidden">
-                        {CLAIM_HANDOFF_CHECKLIST.map(({ key, label }) => (
-                           <div
-                              key={key}
-                              onClick={() => setClaimChecks(prev => ({ ...prev, [key]: !prev[key as keyof typeof claimChecks] }))}
-                              className="flex items-center justify-between px-3 py-2.5 border-b border-emerald-100 last:border-b-0 hover:bg-emerald-50/50 cursor-pointer transition-colors"
-                           >
-                              <span className="text-xs text-slate-600">{label}</span>
-                              <div className={clsx(
-                                 "size-4 rounded border flex items-center justify-center transition-colors",
-                                 claimChecks[key as keyof typeof claimChecks]
-                                    ? "bg-emerald-600 border-emerald-600"
-                                    : "bg-white border-slate-300"
-                              )}>
-                                 {claimChecks[key as keyof typeof claimChecks] && <Check size={12} className="text-white" />}
-                              </div>
+               <section className="space-y-3">
+                  <h3 className="text-sm font-bold text-[#1e293b]">필수 입력 누락 현황</h3>
+                  {handoffMissingItems.length > 0 ? (
+                     <div className="space-y-2 rounded-2xl border border-rose-200 bg-rose-50 p-4">
+                        {handoffMissingItems.map((item) => (
+                           <div key={item} className="text-sm font-medium text-rose-700">
+                              {item}
                            </div>
                         ))}
                      </div>
-                     <div className="mt-2 p-2 bg-amber-50 border border-amber-100 rounded text-[10px] text-amber-700">
-                        청구완료 알림톡 수신 시, 고객에게 환급액 설명 및 지인 소개 유도 필수
+                  ) : (
+                     <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700">
+                        현재 필수 누락 항목이 없습니다.
                      </div>
-                  </section>
-               )}
-
-               {/* 5. 소개DB 처리 */}
-               {selectedHandoff.referralDB && (
-                  <section>
-                     <h3 className="text-sm font-bold text-[#1e293b] mb-3 flex items-center gap-2">
-                        <span className="flex items-center justify-center size-5 bg-purple-100 text-purple-700 rounded-full text-[10px]">5</span>
-                        소개DB 처리
-                     </h3>
-                     <div className="bg-white rounded-lg border border-purple-200 p-3 space-y-2">
-                        <div className="text-[11px] text-slate-500">
-                           소개건은 홈페이지 신청 안내 후 추가 통화 약속을 잡고,
-                           신규DB 통화 루틴과 동일하게 미팅 스케줄을 조율합니다.
-                        </div>
-                        <textarea
-                           value={referralNote}
-                           onChange={(e) => setReferralNote(e.target.value)}
-                           className="w-full p-2 text-xs border border-slate-200 rounded min-h-[60px] resize-none focus:outline-none focus:ring-1 focus:ring-purple-400 placeholder:text-slate-300"
-                           placeholder="소개 경위, 고객 관계 등 메모..."
-                        />
-                     </div>
-                  </section>
-               )}
-
-               {/* 6. Next Actions */}
-               <section>
-                  <h3 className="text-sm font-bold text-[#1e293b] mb-3 flex items-center gap-2">
-                     <span className="flex items-center justify-center size-5 bg-slate-200 rounded-full text-[10px]">
-                        {selectedHandoff.referralDB ? '6' : selectedHandoff.type === '청구팀' ? '5' : '4'}
-                     </span>
-                     필수 이행 항목 (Next Actions)
-                  </h3>
-                  <div className="space-y-3">
-                     {[0, 1, 2].map((idx) => (
-                        <div key={idx} className="flex items-center gap-3">
-                           <span className="text-xs font-bold text-slate-400 w-4">#{idx + 1}</span>
-                           <input
-                              type="text"
-                              value={actions[idx]}
-                              onChange={(e) => updateAction(idx, e.target.value)}
-                              placeholder={`수행해야 할 액션 ${idx + 1}...`}
-                              className="flex-1 px-3 py-2 border border-slate-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-[#0f766e]"
-                           />
-                        </div>
-                     ))}
-                  </div>
-                  <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
-                     <button onClick={() => updateAction(0, "병력 세부사항 재확인")} className="px-2 py-1 bg-slate-100 border border-slate-200 rounded text-[10px] text-slate-600 whitespace-nowrap hover:bg-slate-200">+ 병력 확인</button>
-                     <button onClick={() => updateAction(1, "계약자/피보험자 관계 검증")} className="px-2 py-1 bg-slate-100 border border-slate-200 rounded text-[10px] text-slate-600 whitespace-nowrap hover:bg-slate-200">+ 관계 검증</button>
-                     <button onClick={() => updateAction(2, "증권/지급내역서 독촉")} className="px-2 py-1 bg-slate-100 border border-slate-200 rounded text-[10px] text-slate-600 whitespace-nowrap hover:bg-slate-200">+ 서류 독촉</button>
-                  </div>
+                  )}
                </section>
 
-               {/* Preview Card */}
-               <div className="mt-8 p-4 bg-slate-100 rounded-lg border border-slate-200">
-                  <div className="flex items-center justify-between mb-2">
-                     <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">핸드오프 패킷 미리보기</span>
-                     <BadgeCheck size={16} className="text-slate-400" />
-                  </div>
-                  <div className="bg-white p-4 rounded border border-slate-200 shadow-sm">
-                     <div className="flex justify-between items-start mb-4">
-                        <div>
-                           <div className="font-bold text-[#1e293b] text-lg">{selectedHandoff.customer}</div>
-                           <div className="text-xs text-slate-500">ID: {selectedHandoff.id} · {selectedHandoff.type}</div>
-                        </div>
-                        {grade && <div className="size-10 flex items-center justify-center rounded-lg bg-[#0f766e] text-white font-bold text-xl">{grade}</div>}
-                     </div>
-                     <div className="space-y-1.5 mb-3">
-                        <div className="flex items-center gap-2 text-[11px] text-slate-500">
-                           <ClipboardList size={12} />
-                           <span>미팅 후 업무: {postMeetingCount}/{POST_MEETING_DOCS.length} 완료</span>
-                        </div>
-                        {selectedHandoff.type === '청구팀' && (
-                           <div className="flex items-center gap-2 text-[11px] text-slate-500">
-                              <FileCheck size={12} />
-                              <span>청구 인계: {claimCheckCount}/{CLAIM_HANDOFF_CHECKLIST.length} 완료</span>
-                           </div>
-                        )}
-                     </div>
-                     <div className="space-y-2 border-t border-slate-100 pt-3">
-                        {actions.filter(a => a).map((a, i) => (
-                           <div key={i} className="flex items-center gap-2 text-sm text-slate-700">
-                              <div className="size-1.5 rounded-full bg-slate-300"></div>
-                              {a}
-                           </div>
-                        ))}
-                        {actions.every(a => !a) && <span className="text-sm text-slate-400 italic">지정된 액션 없음...</span>}
-                     </div>
-                  </div>
-               </div>
+               <section className="space-y-3">
+                  <h3 className="text-sm font-bold text-[#1e293b]">인계 메모</h3>
+                  <textarea
+                     value={handoffMemo}
+                     onChange={(event) => setHandoffMemo(event.target.value)}
+                     className="min-h-[160px] w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm outline-none transition focus:border-[#0f766e]"
+                     placeholder="누락 확인 후 전달할 핵심 메모를 입력하세요."
+                  />
+               </section>
 
             </div>
 
@@ -896,7 +873,7 @@ export function Handoff({ onNavigate }: HandoffProps) {
                                  type: 'handoff',
                                  actor: '이관관리',
                                  at: new Date().toISOString().slice(0, 16).replace('T', ' '),
-                                 message: `${selectedHandoff.type} 인계 패킷을 전송했습니다. (등급: ${grade || '-'}, 미팅후업무: ${postMeetingCount}/${POST_MEETING_DOCS.length}${selectedHandoff.type === '청구팀' ? `, 청구인계: ${claimCheckCount}/${CLAIM_HANDOFF_CHECKLIST.length}` : ''})`,
+                                 message: `${selectedHandoff.type} 인계 패킷을 전송했습니다. 메모: ${handoffMemo}`,
                                  tone: 'success',
                               });
                            }
@@ -910,7 +887,7 @@ export function Handoff({ onNavigate }: HandoffProps) {
                               : "bg-[#0f766e] hover:bg-[#0d6b63]"
                         )}
                      >
-                        <Send size={16} /> {!canHandoff ? '인계 조건 미충족' : selectedHandoff.type === '청구팀' ? '청구팀으로 인계' : selectedHandoff.type === '소개DB' ? '소개DB 등록' : '미팅팀으로 전송'}
+                        <Send size={16} /> {!canHandoff ? '인계 조건 미충족' : '인계 완료'}
                      </button>
                   </div>
                )}

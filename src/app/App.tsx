@@ -1,48 +1,116 @@
-import React, { useState } from 'react';
+import React, { Suspense, lazy, useEffect, useState } from 'react';
 import {
   Bell,
   Search,
   User,
 } from 'lucide-react';
-import { Dashboard } from './pages/Dashboard';
-import { Customers } from './pages/Customers';
-import { Requests } from './pages/Requests';
-import { Consultation } from './pages/Consultation';
-import { MeetingSchedule } from './pages/MeetingSchedule';
-import { MeetingExecution } from './pages/MeetingExecution';
-import { ContractList } from './pages/ContractList';
-import { Claims } from './pages/Claims';
-import { IssuanceMaster } from './pages/IssuanceMaster';
-import { IssuanceStaff } from './pages/IssuanceStaff';
-import { DropOffLogs } from './pages/DropOffLogs';
-import { Documents } from './pages/Documents';
-import { SystemSettings } from './pages/Settings';
-import { Leads } from './pages/Leads';
-import { Handoff } from './pages/Handoff';
-import { DailyReport } from './pages/DailyReport';
-import { FirstTM } from './pages/tm/FirstTM';
-import { SecondTM } from './pages/tm/SecondTM';
-import { TMChecklist } from './pages/tm/TMChecklist';
-import { PreAnalysis } from './pages/meeting/PreAnalysis';
-import { MeetingOnSite } from './pages/meeting/MeetingOnSite';
-import { ContractClose } from './pages/meeting/ContractClose';
-import { ClaimReceipt } from './pages/claims/ClaimReceipt';
-import { UnpaidAnalysis } from './pages/claims/UnpaidAnalysis';
-import { DocIssuance } from './pages/claims/DocIssuance';
-import { FinalAnalysis } from './pages/claims/FinalAnalysis';
-import { PaymentConfirm } from './pages/payment/PaymentConfirm';
-import { Aftercare } from './pages/payment/Aftercare';
-import { ReferralManagement } from './pages/growth/ReferralManagement';
-import { VocManagement } from './pages/cs/VocManagement';
-import { ComplianceDashboard } from './pages/compliance/ComplianceDashboard';
-import { AdminOperations } from './pages/admin';
-import { SimpleClaimWorkflow } from './pages/simpleClaims/SimpleClaimWorkflow';
 import { Toaster } from 'sonner';
 import { JourneyProvider } from '@/app/journey/JourneyContext';
 import { IssuanceProvider } from '@/app/issuance/IssuanceContext';
 import { RoleProvider, useRole } from '@/app/auth/RoleContext';
 import { Sidebar } from '@/app/navigation/Sidebar';
+import { Handoff } from './pages/Handoff';
 import type { NavItem } from '@/app/navigation/navConfig';
+import type { TeamRole } from '@/app/journey/types';
+
+function lazyNamed<T extends Record<string, React.ComponentType<any>>, K extends keyof T>(
+  loader: () => Promise<T>,
+  key: K,
+) {
+  return lazy(async () => {
+    const module = await loader();
+    return { default: module[key] };
+  });
+}
+
+const Dashboard = lazyNamed(() => import('./pages/Dashboard'), 'Dashboard');
+const Customers = lazyNamed(() => import('./pages/Customers'), 'Customers');
+const Requests = lazyNamed(() => import('./pages/Requests'), 'Requests');
+const CaseDetailPage = lazyNamed(() => import('./pages/CaseDetailPage'), 'CaseDetailPage');
+const Consultation = lazyNamed(() => import('./pages/Consultation'), 'Consultation');
+const MeetingSchedule = lazyNamed(() => import('./pages/MeetingSchedule'), 'MeetingSchedule');
+const MeetingExecution = lazyNamed(() => import('./pages/MeetingExecution'), 'MeetingExecution');
+const ContractList = lazyNamed(() => import('./pages/ContractList'), 'ContractList');
+const Claims = lazyNamed(() => import('./pages/Claims'), 'Claims');
+const IssuanceMaster = lazyNamed(() => import('./pages/IssuanceMaster'), 'IssuanceMaster');
+const IssuanceStaff = lazyNamed(() => import('./pages/IssuanceStaff'), 'IssuanceStaff');
+const DropOffLogs = lazyNamed(() => import('./pages/DropOffLogs'), 'DropOffLogs');
+const Documents = lazyNamed(() => import('./pages/Documents'), 'Documents');
+const SystemSettings = lazyNamed(() => import('./pages/Settings'), 'SystemSettings');
+const Leads = lazyNamed(() => import('./pages/Leads'), 'Leads');
+const DailyReport = lazyNamed(() => import('./pages/DailyReport'), 'DailyReport');
+const FirstTM = lazyNamed(() => import('./pages/tm/FirstTM'), 'FirstTM');
+const SecondTM = lazyNamed(() => import('./pages/tm/SecondTM'), 'SecondTM');
+const TMChecklist = lazyNamed(() => import('./pages/tm/TMChecklist'), 'TMChecklist');
+const PreAnalysis = lazyNamed(() => import('./pages/meeting/PreAnalysis'), 'PreAnalysis');
+const MeetingOnSite = lazyNamed(() => import('./pages/meeting/MeetingOnSite'), 'MeetingOnSite');
+const ContractClose = lazyNamed(() => import('./pages/meeting/ContractClose'), 'ContractClose');
+const ClaimReceipt = lazyNamed(() => import('./pages/claims/ClaimReceipt'), 'ClaimReceipt');
+const UnpaidAnalysis = lazyNamed(() => import('./pages/claims/UnpaidAnalysis'), 'UnpaidAnalysis');
+const DocIssuance = lazyNamed(() => import('./pages/claims/DocIssuance'), 'DocIssuance');
+const FinalAnalysis = lazyNamed(() => import('./pages/claims/FinalAnalysis'), 'FinalAnalysis');
+const PaymentConfirm = lazyNamed(() => import('./pages/payment/PaymentConfirm'), 'PaymentConfirm');
+const Aftercare = lazyNamed(() => import('./pages/payment/Aftercare'), 'Aftercare');
+const ReferralManagement = lazyNamed(() => import('./pages/growth/ReferralManagement'), 'ReferralManagement');
+const VocManagement = lazyNamed(() => import('./pages/cs/VocManagement'), 'VocManagement');
+const ComplianceDashboard = lazyNamed(() => import('./pages/compliance/ComplianceDashboard'), 'ComplianceDashboard');
+const AdminOperations = lazyNamed(() => import('./pages/admin'), 'AdminOperations');
+const SimpleClaimWorkflow = lazyNamed(() => import('./pages/simpleClaims/SimpleClaimWorkflow'), 'SimpleClaimWorkflow');
+
+const DEBUG_ROLE_SET = new Set<TeamRole>([
+  'call_member',
+  'call_lead',
+  'sales_member',
+  'sales_lead',
+  'claims_member',
+  'claims_lead',
+  'cs',
+  'compliance',
+  'admin',
+]);
+
+const DEBUG_TAB_SET = new Set<NavItem>([
+  'dashboard',
+  'customers',
+  'leads',
+  'requests',
+  'case-detail',
+  'consultation',
+  'tm-first',
+  'tm-second',
+  'tm-checklist',
+  'handoff',
+  'meeting-schedule',
+  'meeting-all',
+  'meeting-refund',
+  'meeting-simple',
+  'meeting-pre-analysis',
+  'meeting-on-site',
+  'meeting-contract-close',
+  'contracts',
+  'claims-all',
+  'claims-refund',
+  'claims-simple',
+  'claims-issuance',
+  'claims-receipt',
+  'claims-unpaid',
+  'claims-doc-issuance',
+  'claims-final',
+  'issuance-master',
+  'issuance-manager',
+  'issuance-staff',
+  'payment-confirm',
+  'aftercare',
+  'referral-management',
+  'simple-claims',
+  'voc',
+  'compliance',
+  'admin-operations',
+  'dropoff',
+  'daily-report',
+  'documents',
+  'settings',
+]);
 
 export default function App() {
   return (
@@ -61,7 +129,34 @@ function AppShell() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
   const [targetRequestId, setTargetRequestId] = useState<string | null>(null);
-  const { roleLabel } = useRole();
+  const [initialSection, setInitialSection] = useState<'call' | 'sales' | 'claims'>('call');
+  const { roleLabel, setRole } = useRole();
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const params = new URLSearchParams(window.location.search);
+    const debugTab = params.get('tab');
+    const debugRole = params.get('role');
+    const debugRequestId = params.get('requestId');
+    const debugSection = params.get('section');
+
+    if (debugRole && DEBUG_ROLE_SET.has(debugRole as TeamRole)) {
+      setRole(debugRole as TeamRole);
+    }
+
+    if (debugSection === 'call' || debugSection === 'sales' || debugSection === 'claims') {
+      setInitialSection(debugSection);
+    }
+
+    if (debugRequestId) {
+      setTargetRequestId(debugRequestId);
+    }
+
+    if (debugTab && DEBUG_TAB_SET.has(debugTab as NavItem)) {
+      setActiveTab(debugTab as NavItem);
+    }
+  }, [setRole]);
 
   const goToTab = (tab: NavItem) => {
     setSelectedCustomerId(null);
@@ -85,10 +180,23 @@ function AppShell() {
       setSelectedCustomerId(null);
       
       // Map path to tab
-      if (path === 'consultation') setActiveTab('consultation');
-      else if (path === 'consultation-v2') setActiveTab('consultation');
-      else if (path === 'meeting-all') setActiveTab('meeting-all');
-      else if (path === 'claims-all') setActiveTab('claims-all');
+      if (path === 'consultation') {
+        setInitialSection('call');
+        setActiveTab('case-detail');
+      }
+      else if (path === 'consultation-v2') {
+        setInitialSection('call');
+        setActiveTab('case-detail');
+      }
+      else if (path === 'meeting-all') {
+        setInitialSection('sales');
+        setActiveTab('case-detail');
+      }
+      else if (path === 'claims-all') {
+        setInitialSection('claims');
+        setActiveTab('case-detail');
+      }
+      else if (path === 'case-detail') setActiveTab('case-detail');
       else setActiveTab(path as NavItem);
     }
     // 3. Simple Navigation
@@ -111,6 +219,14 @@ function AppShell() {
       case 'customers': return <Customers initialCustomerId={selectedCustomerId} onNavigate={handleNavigate} />;
       case 'leads': return <Leads />;
       case 'requests': return <Requests onNavigate={handleNavigate} />;
+      case 'case-detail':
+        return (
+          <CaseDetailPage
+            requestId={targetRequestId ?? ''}
+            initialSection={initialSection}
+            onNavigate={handleNavigate}
+          />
+        );
       
       case 'consultation': return <Consultation initialRequestId={targetRequestId} />; // 전체 (type undefined)
       case 'tm-first': return <FirstTM initialRequestId={targetRequestId} />;
@@ -168,7 +284,8 @@ function AppShell() {
       case 'dashboard': return '데이터 건전성 대시보드';
       case 'customers': return '고객 관리 ';
       case 'leads': return 'DB 배정 관리 (신청 유입)';
-      case 'requests': return '접수 현황 (전체)';
+      case 'requests': return '처리 현황';
+      case 'case-detail': return '케이스 상세';
       case 'consultation': return '상담 리스트 (전체)';
       case 'tm-first': return '1차 TM (S5)';
       case 'tm-second': return '2차 TM (S6)';
@@ -203,6 +320,15 @@ function AppShell() {
       default: return '';
     }
   };
+
+  const loadingFallback = (
+    <div className="flex h-full min-h-[480px] items-center justify-center rounded-2xl border border-slate-200 bg-white">
+      <div className="space-y-3 text-center">
+        <div className="mx-auto h-10 w-10 animate-spin rounded-full border-4 border-slate-200 border-t-[#0f766e]" />
+        <div className="text-sm font-medium text-slate-600">화면 불러오는 중...</div>
+      </div>
+    </div>
+  );
 
   return (
       <div className="flex h-screen w-full bg-[#F6F7F9] font-sans text-slate-900 overflow-hidden">
@@ -257,7 +383,9 @@ function AppShell() {
           {/* Scrollable Content */}
           <div className="flex-1 overflow-auto bg-[#F6F7F9] relative">
             <div className="p-8 min-w-[1000px] h-full">
-              {renderContent()}
+              <Suspense fallback={loadingFallback}>
+                {renderContent()}
+              </Suspense>
             </div>
           </div>
         </main>

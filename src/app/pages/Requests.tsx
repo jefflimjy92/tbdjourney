@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { 
   Filter, 
   Plus, 
@@ -28,6 +28,14 @@ import {
   getRowsDateBounds,
   type PerformancePeriodPreset,
 } from '@/app/issuance/performancePeriodUtils';
+import type { JourneyPhase } from '@/app/journey/types';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/app/components/ui/select';
 
 const REQUESTS = MOCK_DATA.requestRows;
 
@@ -46,6 +54,10 @@ const ACTIVITIES = [
   { id: 2, type: 'consultation', title: '1차 상담 완료', desc: '환급 예상액 안내 완료 (약 150만원). 미팅 희망함.', date: '2026.01.19 10:30', actor: '김상담' },
   { id: 3, type: 'assignment', title: '미팅팀 배정', desc: '담당자: 박미팅 매니저', date: '2026.01.19 14:00', actor: 'System' },
   { id: 4, type: 'meeting', title: '미팅 일정 확정', desc: '2026.01.21 14:00 / 강남역 스타벅스', date: '2026.01.20 09:15', actor: '박미팅' },
+  { id: 5, type: 'analysis', title: 'HIRA 원본 확인', desc: '심평원 원본 PDF와 수술/질환 히스토리 대조 완료', date: '2026.01.20 16:20', actor: '분석팀' },
+  { id: 6, type: 'handoff', title: '서류 보완 요청', desc: '진료기록 사본 1건과 위임장 추가 제출 요청', date: '2026.01.21 09:40', actor: '최청구' },
+  { id: 7, type: 'claim', title: '청구 인계 완료', desc: '보험사 접수 전 최종 체크리스트 승인', date: '2026.01.22 11:10', actor: '청구팀' },
+  { id: 8, type: 'close', title: '종결 처리', desc: '지급 완료 후 사후 안내까지 마감', date: '2026.01.24 16:45', actor: 'CS팀' },
 ];
 
 const stageLabelMap = {
@@ -57,17 +69,155 @@ const stageLabelMap = {
   closed: '종결',
 } as const;
 
+type RequestBaseRow = typeof REQUESTS[number];
+type RequestFlowStep = 'S2' | 'S3' | 'S4' | 'S5' | 'S6' | 'S7' | 'S8' | 'S9';
+type RequestTabKey = 'all' | 'intake' | 'consultation' | 'meeting' | 'claims' | 'closed';
+type RequestRow = RequestBaseRow & {
+  assignedSalesStaff: string;
+  currentStep?: RequestFlowStep;
+  phase: JourneyPhase;
+};
+type RequestRowWithFlow = RequestBaseRow & { currentStep: RequestFlowStep };
+
+const REQUEST_FLOW_STEPS: RequestFlowStep[] = ['S2', 'S3', 'S4', 'S5', 'S6', 'S7', 'S8', 'S9'];
+
+const STEP_TABS = [
+  { key: 'all', label: '전체' },
+  { key: 'intake', label: '접수' },
+  { key: 'consultation', label: '상담' },
+  { key: 'meeting', label: '미팅' },
+  { key: 'claims', label: '청구' },
+  { key: 'closed', label: '종결' },
+] as const;
+
+type StepTabKey = typeof STEP_TABS[number]['key'];
+const CLOSED_STATUS_TOKENS = ['종결', '완료', '노쇼', '취소'];
+
+function resolveMockStep(request: RequestRow, index: number): RequestFlowStep {
+  const currentStep = request.currentStep;
+  if (currentStep && REQUEST_FLOW_STEPS.includes(currentStep)) {
+    return currentStep;
+  }
+  return REQUEST_FLOW_STEPS[index % REQUEST_FLOW_STEPS.length];
+}
+
+function getStageClassName(stage: string) {
+  switch (stage) {
+    case '접수':
+      return 'text-slate-500';
+    case '상담':
+      return 'text-blue-600';
+    case '미팅':
+      return 'text-violet-600';
+    case '청구':
+      return 'text-teal-600';
+    case '종결':
+      return 'text-emerald-600';
+    default:
+      return 'text-slate-400';
+  }
+}
+
+function getStatusBadgeClassName(status: string) {
+  if (status.includes('실패') || status.includes('노쇼') || status.includes('취소') || status.includes('불가')) {
+    return 'bg-rose-50 text-rose-700 border-rose-200';
+  }
+  if (status.includes('보완')) {
+    return 'bg-amber-50 text-amber-700 border-amber-200';
+  }
+  if (status.includes('지급 대기') || status.includes('심사중')) {
+    return 'bg-cyan-50 text-cyan-700 border-cyan-200';
+  }
+  if (status.includes('완료') || status === '지급 완료') {
+    return 'bg-emerald-50 text-emerald-700 border-emerald-200';
+  }
+  if (status === '가망 고객' || status.includes('확정')) {
+    return 'bg-violet-50 text-violet-700 border-violet-200';
+  }
+  if (status.includes('진행')) {
+    return 'bg-blue-50 text-blue-700 border-blue-200';
+  }
+  if (status.includes('대기') || status.includes('예정') || status === '조회 중' || status === '배정 대기' || status === '상담 대기') {
+    return 'bg-slate-50 text-slate-600 border-slate-200';
+  }
+  if (status.includes('접수')) {
+    return 'bg-teal-50 text-teal-700 border-teal-200';
+  }
+  return 'bg-slate-50 text-slate-600 border-slate-200';
+}
+
+function inferPhaseFromRequest(request: RequestBaseRow, currentStep: RequestFlowStep): JourneyPhase {
+  if (request.stage === '종결' || request.stage === '종료' || CLOSED_STATUS_TOKENS.some((token) => request.status.includes(token))) {
+    return 'growth';
+  }
+  if (request.stage === '청구') {
+    return request.status.includes('지급') ? 'payment' : 'claims';
+  }
+  if (request.stage === '미팅') {
+    return 'meeting';
+  }
+  if (request.stage === '상담') {
+    return 'tm';
+  }
+
+  switch (currentStep) {
+    case 'S2':
+    case 'S3':
+      return 'inquiry';
+    case 'S4':
+      return 'classification';
+    case 'S5':
+    case 'S6':
+      return 'meeting';
+    case 'S7':
+      return 'claims';
+    case 'S8':
+      return 'payment';
+    case 'S9':
+      return 'growth';
+    default:
+      return 'inflow';
+  }
+}
+
+function isClosedRequest(request: RequestRow) {
+  return request.phase === 'growth' || CLOSED_STATUS_TOKENS.some((token) => request.status.includes(token));
+}
+
+function matchesStepTab(request: RequestRow, tab: RequestTabKey) {
+  switch (tab) {
+    case 'all':
+      return true;
+    case 'intake':
+      return request.phase === 'inflow' || request.phase === 'inquiry' || request.phase === 'classification';
+    case 'consultation':
+      return request.phase === 'tm';
+    case 'meeting':
+      return request.phase === 'meeting';
+    case 'claims':
+      return request.phase === 'claims' || request.phase === 'payment';
+    case 'closed':
+      return isClosedRequest(request);
+    default:
+      return true;
+  }
+}
+
 export function Requests({ onNavigate }: { onNavigate?: (path: string) => void }) {
   const { journeys } = useJourneyStore();
   const [view, setView] = useState<'list' | 'detail'>('list');
   const [selectedRequestId, setSelectedRequestId] = useState<string | null>(null);
 
   const requestRows = useMemo(() => (
-    REQUESTS.map((request) => {
+    (REQUESTS as RequestRow[]).map((request, index) => {
+      const currentStep = resolveMockStep(request, index);
       const journey = journeys[request.id];
       return {
         ...request,
+        assignedSalesStaff: journey?.meetingDraft?.assignedStaff || '',
+        currentStep,
         customer: journey?.customerName || request.customer,
+        phase: journey?.phase || inferPhaseFromRequest(request, currentStep),
         stage: journey ? stageLabelMap[journey.stage] : request.stage,
         status: journey?.status || request.status,
         manager: journey?.owner || request.manager,
@@ -94,27 +244,13 @@ export function Requests({ onNavigate }: { onNavigate?: (path: string) => void }
   return <RequestList onSelect={handleSelect} requests={requestRows} />;
 }
 
-const STEP_TABS = [
-  { key: 'all', label: '전체' },
-  { key: 'S2', label: '조회 중 (S2)' },
-  { key: 'S3', label: '신청 완료 (S3)' },
-  { key: 'S4', label: '배정 대기 (S4)' },
-] as const;
-
-type StepTabKey = typeof STEP_TABS[number]['key'];
-
-/** Mock: 각 접수건에 currentStep 매핑 */
-function assignMockStep(req: typeof REQUESTS[number], idx: number): typeof REQUESTS[number] & { currentStep: string } {
-  const steps = ['S2', 'S3', 'S4', 'S5', 'S3', 'S2', 'S4', 'S3'];
-  return { ...req, currentStep: steps[idx % steps.length] };
-}
-
-function RequestList({ onSelect, requests }: { onSelect: (id: string) => void; requests: typeof REQUESTS }) {
+function RequestList({ onSelect, requests }: { onSelect: (id: string) => void; requests: RequestRow[] }) {
   const defaultCustomPeriodRange = useMemo(() => getDefaultCustomPeriodRange(), []);
-  const [periodPreset, setPeriodPreset] = useState<PerformancePeriodPreset>('this_month');
+  const [periodPreset, setPeriodPreset] = useState<PerformancePeriodPreset>('all');
   const [customPeriodStartDate, setCustomPeriodStartDate] = useState(defaultCustomPeriodRange.startDate);
   const [customPeriodEndDate, setCustomPeriodEndDate] = useState(defaultCustomPeriodRange.endDate);
   const [activeTab, setActiveTab] = useState<StepTabKey>('all');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
   const allRange = useMemo(
     () => getRowsDateBounds(requests, (request) => request.date, defaultCustomPeriodRange),
     [defaultCustomPeriodRange, requests]
@@ -130,27 +266,49 @@ function RequestList({ onSelect, requests }: { onSelect: (id: string) => void; r
     [periodRange, requests]
   );
 
-  const requestsWithStep = useMemo(
-    () => periodFiltered.map((req, idx) => assignMockStep(req, idx)),
-    [periodFiltered]
+  const stepCounts = useMemo(() => {
+    const counts: Record<StepTabKey, number> = {
+      all: periodFiltered.length,
+      intake: 0,
+      consultation: 0,
+      meeting: 0,
+      claims: 0,
+      closed: 0,
+    };
+
+    for (const request of periodFiltered) {
+      for (const tab of STEP_TABS) {
+        if (tab.key !== 'all' && matchesStepTab(request, tab.key)) {
+          counts[tab.key] += 1;
+        }
+      }
+    }
+
+    return counts;
+  }, [periodFiltered]);
+
+  const tabFilteredRequests = useMemo(
+    () => activeTab === 'all' ? periodFiltered : periodFiltered.filter((request) => matchesStepTab(request, activeTab)),
+    [activeTab, periodFiltered]
   );
 
-  const stepCounts = useMemo(() => ({
-    all: requestsWithStep.length,
-    S2: requestsWithStep.filter(r => r.currentStep === 'S2').length,
-    S3: requestsWithStep.filter(r => r.currentStep === 'S3').length,
-    S4: requestsWithStep.filter(r => r.currentStep === 'S4').length,
-  }), [requestsWithStep]);
+  const statusOptions = useMemo(
+    () => Array.from(new Set(tabFilteredRequests.map((request) => request.status).filter(Boolean))),
+    [tabFilteredRequests]
+  );
+
+  useEffect(() => {
+    if (statusFilter !== 'all' && !statusOptions.includes(statusFilter)) {
+      setStatusFilter('all');
+    }
+  }, [statusFilter, statusOptions]);
 
   const filteredRequests = useMemo(
-    () => activeTab === 'all' ? requestsWithStep : requestsWithStep.filter(r => r.currentStep === activeTab),
-    [activeTab, requestsWithStep]
+    () => statusFilter === 'all'
+      ? tabFilteredRequests
+      : tabFilteredRequests.filter((request) => request.status === statusFilter),
+    [statusFilter, tabFilteredRequests]
   );
-
-  // Summary metrics (mock)
-  const lookupRate = 85;   // 조회 완료율
-  const conversionRate = 62; // 조회→신청 전환율
-  const dropoutRate = 18;    // 신청 이탈률
 
   return (
     <div className="flex flex-col h-full bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
@@ -168,6 +326,19 @@ function RequestList({ onSelect, requests }: { onSelect: (id: string) => void; r
             onStartDateChange={setCustomPeriodStartDate}
             onEndDateChange={setCustomPeriodEndDate}
           />
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger className="w-[180px] bg-white">
+              <SelectValue placeholder="전체 상태" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">전체 상태</SelectItem>
+              {statusOptions.map((status) => (
+                <SelectItem key={status} value={status}>
+                  {status}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           <div className="flex items-center gap-2 px-3 py-2 bg-white border border-slate-300 rounded text-sm text-slate-600 hover:bg-slate-50 cursor-pointer transition-colors shadow-sm">
             <Filter size={16} /> 필터
           </div>
@@ -177,35 +348,14 @@ function RequestList({ onSelect, requests }: { onSelect: (id: string) => void; r
         </div>
       </div>
 
-      {/* Summary Cards (S2-S3 Metrics) */}
-      <div className="px-6 py-3 border-b border-slate-100 bg-slate-50/50">
-        <div className="flex gap-4">
-          <div className="flex items-center gap-2 px-3 py-2 bg-white rounded border border-slate-200 shadow-sm">
-            <CheckCircle2 size={14} className="text-blue-500" />
-            <span className="text-xs text-slate-500">조회 완료율</span>
-            <span className="text-sm font-bold text-[#1e293b]">{lookupRate}%</span>
-          </div>
-          <div className="flex items-center gap-2 px-3 py-2 bg-white rounded border border-slate-200 shadow-sm">
-            <ArrowLeft size={14} className="text-emerald-500 rotate-180" />
-            <span className="text-xs text-slate-500">조회→신청 전환율</span>
-            <span className="text-sm font-bold text-emerald-700">{conversionRate}%</span>
-          </div>
-          <div className="flex items-center gap-2 px-3 py-2 bg-white rounded border border-slate-200 shadow-sm">
-            <AlertCircle size={14} className="text-rose-400" />
-            <span className="text-xs text-slate-500">신청 이탈률</span>
-            <span className="text-sm font-bold text-rose-600">{dropoutRate}%</span>
-          </div>
-        </div>
-      </div>
-
       {/* Step Filter Tabs */}
-      <div className="px-6 pt-3 pb-0 border-b border-slate-200 bg-white flex gap-1">
+      <div className="px-6 pt-3 pb-0 border-b border-slate-200 bg-white flex gap-1 overflow-x-auto">
         {STEP_TABS.map(tab => (
           <button
             key={tab.key}
             onClick={() => setActiveTab(tab.key)}
             className={clsx(
-              'px-4 py-2 text-xs font-bold rounded-t border-b-2 transition-colors',
+              'px-4 py-2 text-xs font-bold rounded-t border-b-2 transition-colors shrink-0',
               activeTab === tab.key
                 ? 'text-[#1e293b] border-[#1e293b] bg-slate-50'
                 : 'text-slate-400 border-transparent hover:text-slate-600 hover:bg-slate-50'
@@ -233,7 +383,7 @@ function RequestList({ onSelect, requests }: { onSelect: (id: string) => void; r
               <th className="px-6 py-3 font-medium">접수일</th>
               <th className="px-6 py-3 font-medium">현재 단계</th>
               <th className="px-6 py-3 font-medium">스텝</th>
-              <th className="px-6 py-3 font-medium">담당팀</th>
+              <th className="px-6 py-3 font-medium">담당 영업직원</th>
               <th className="px-6 py-3 font-medium">상태</th>
               <th className="px-6 py-3 font-medium text-right">상세</th>
             </tr>
@@ -253,21 +403,13 @@ function RequestList({ onSelect, requests }: { onSelect: (id: string) => void; r
                 </td>
                 <td className="px-6 py-4 font-bold text-[#1e293b]">{req.customer}</td>
                 <td className="px-6 py-4 text-slate-600 font-mono text-xs">{req.date}</td>
-                <td className="px-6 py-4">
-                  <span className={clsx("font-bold text-xs", 
-                    req.stage === '상담' ? "text-blue-600" :
-                    req.stage === '미팅' ? "text-purple-600" :
-                    req.stage === '청구' ? "text-[#0f766e]" : "text-slate-400"
-                  )}>
-                    {req.stage}
-                  </span>
-                </td>
+                <td className="px-6 py-4 font-medium text-slate-700">{req.manager || '-'}</td>
                 <td className="px-6 py-4">
                   <span className="inline-flex px-2 py-0.5 rounded bg-slate-100 text-xs font-mono font-bold text-slate-500">
-                    {(req as any).currentStep || '-'}
+                    {req.currentStep || '-'}
                   </span>
                 </td>
-                <td className="px-6 py-4 text-slate-600">{req.team}</td>
+                <td className="px-6 py-4 text-slate-600">{req.assignedSalesStaff || '-'}</td>
                 <td className="px-6 py-4">
                   <StatusBadge status={req.status} />
                 </td>
@@ -285,7 +427,14 @@ function RequestList({ onSelect, requests }: { onSelect: (id: string) => void; r
   );
 }
 
-function RequestDetail({ request, onBack, onNavigate }: { request: any, onBack: () => void, onNavigate?: (path: string) => void }) {
+function RequestDetail({ request, onBack, onNavigate }: { request: RequestRowWithFlow, onBack: () => void, onNavigate?: (path: string) => void }) {
+  const currentStep = request.currentStep;
+  const isDropped = ['노쇼', '계약실패', '미팅취소', '현장불가'].some((token) => request.status.includes(token));
+  const consultationStatus = isDropped ? '이탈' : ['S2', 'S3', 'S4'].includes(currentStep) ? '진행 중' : '완료';
+  const meetingStatus = isDropped ? '이탈' : ['S5', 'S6'].includes(currentStep) ? '진행 중' : '완료';
+  const claimsStatus = isDropped ? '대기' : ['S7', 'S8'].includes(currentStep) ? '진행 중' : currentStep === 'S9' ? '완료' : '대기';
+  const requestDateLabel = request.date.replace(/-/g, '.');
+
   return (
     <div className="flex flex-col h-full bg-[#F9FAFB] overflow-hidden">
       {/* Header */}
@@ -297,6 +446,7 @@ function RequestDetail({ request, onBack, onNavigate }: { request: any, onBack: 
           <div>
             <div className="flex items-center gap-2 mb-1">
                <span className="text-xs font-mono font-bold bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded">{request.id}</span>
+               <span className="text-xs font-mono font-bold bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded">{currentStep}</span>
                <StatusBadge status={request.status} />
             </div>
             <h1 className="text-xl font-bold text-[#1e293b] tracking-tight">{request.customer} 고객 접수 처리 현황</h1>
@@ -359,14 +509,14 @@ function RequestDetail({ request, onBack, onNavigate }: { request: any, onBack: 
             {/* Consultation Team Card */}
             <TeamCard 
               title="상담팀 (Consultation)" 
-              status={request.status === '이탈(상담)' ? '이탈' : '완료'} 
+              status={consultationStatus} 
               manager="김상담" 
-              startDate="2026.01.19"
-              endDate="2026.01.19"
+              startDate={requestDateLabel}
+              endDate={requestDateLabel}
               icon={<MessageSquare size={16} />}
               onViewDetail={() => onNavigate?.('consultation:' + request.id)}
-              reason={request.status === '이탈(상담)' ? "고객 단순 변심으로 인한 중단 요청" : undefined}
-              highlightCompletion={request.status !== '이탈(상담)'} // 미팅 인계 완료 강조
+              reason={isDropped ? "고객 단순 변심 또는 운영 중단으로 상담 흐름이 멈췄습니다." : undefined}
+              highlightCompletion={!isDropped && currentStep !== 'S2'} // 미팅 인계 완료 강조
             >
               <div className="space-y-4">
                 {/* Checkpoints */}
@@ -377,7 +527,7 @@ function RequestDetail({ request, onBack, onNavigate }: { request: any, onBack: 
                 </div>
 
                 {/* Handoff Status */}
-                {request.status !== '이탈(상담)' && (
+                {!isDropped && (
                   <div className="mt-2 bg-emerald-50 border border-emerald-100 rounded-lg p-3 flex items-center gap-2 text-emerald-700">
                     <CheckCircle2 size={16} className="fill-emerald-100 text-emerald-600" />
                     <span className="text-xs font-bold">미팅 인계 완료</span>
@@ -389,10 +539,10 @@ function RequestDetail({ request, onBack, onNavigate }: { request: any, onBack: 
             {/* Meeting Team Card */}
             <TeamCard 
               title="미팅팀 (Meeting)" 
-              status="완료" 
+              status={meetingStatus} 
               manager="박미팅" 
-              startDate="2026.01.21"
-              endDate="2026.01.21"
+              startDate={requestDateLabel}
+              endDate={requestDateLabel}
               icon={<Briefcase size={16} />}
               onViewDetail={() => onNavigate?.('meeting-all:' + request.id)}
             >
@@ -460,18 +610,29 @@ function RequestDetail({ request, onBack, onNavigate }: { request: any, onBack: 
             {/* Claims Team Card */}
             <TeamCard 
               title="청구팀 (Claims)" 
-              status="대기" 
-              manager="-" 
-              startDate="-"
-              endDate="-"
+              status={claimsStatus} 
+              manager={claimsStatus === '대기' ? '-' : '최청구'} 
+              startDate={claimsStatus === '대기' ? '-' : requestDateLabel}
+              endDate={claimsStatus === '대기' ? '-' : requestDateLabel}
               icon={<FileText size={16} />}
               onViewDetail={() => onNavigate?.('claims-all:' + request.id)}
             >
               <div className="flex flex-col items-center justify-center h-32 text-slate-400">
-                <div className="size-10 rounded-full bg-slate-50 flex items-center justify-center mb-2">
-                  <AlertCircle size={20} className="opacity-30" />
-                </div>
-                <span className="text-xs font-medium opacity-60">미팅 완료 후 활성화됩니다.</span>
+                {claimsStatus === '대기' ? (
+                  <>
+                    <div className="size-10 rounded-full bg-slate-50 flex items-center justify-center mb-2">
+                      <AlertCircle size={20} className="opacity-30" />
+                    </div>
+                    <span className="text-xs font-medium opacity-60">미팅 완료 후 활성화됩니다.</span>
+                  </>
+                ) : (
+                  <>
+                    <div className="size-10 rounded-full bg-emerald-50 flex items-center justify-center mb-2">
+                      <FileText size={18} className="text-emerald-500" />
+                    </div>
+                    <span className="text-xs font-medium text-slate-600">청구 접수 후 보완/지급 흐름을 추적 중입니다.</span>
+                  </>
+                )}
               </div>
             </TeamCard>
 
@@ -630,16 +791,8 @@ function CheckpointItem({ label, current, total }: { label: string, current: num
 }
 
 function StatusBadge({ status }: { status: string }) {
-  const styles = {
-    '진행 중': 'bg-blue-50 text-blue-700 border-blue-200',
-    '완료': 'bg-emerald-50 text-emerald-700 border-emerald-200',
-    '보완 요청': 'bg-amber-50 text-amber-700 border-amber-200',
-    '이탈(상담)': 'bg-slate-50 text-slate-500 border-slate-200',
-    '접수': 'bg-slate-50 text-slate-600 border-slate-200'
-  };
-  
   return (
-    <span className={clsx("inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold border shadow-sm", styles[status as keyof typeof styles] || styles['접수'])}>
+    <span className={clsx("inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold border shadow-sm", getStatusBadgeClassName(status))}>
       {status}
     </span>
   );

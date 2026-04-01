@@ -1,11 +1,14 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { ArrowLeft, Check, ChevronRight } from 'lucide-react';
 import clsx from 'clsx';
 import { format, subDays } from 'date-fns';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/app/components/ui/dialog';
 
 export interface EmployeeStepDefinition {
   key: string;
   label: string;
+  headerCaption?: string;
+  headerLabel?: string;
   shortLabel: string;
 }
 
@@ -39,11 +42,21 @@ export interface EmployeeStepOwnerDetailColumn<T = unknown> {
   render: (item: EmployeeStepMatrixItem<T>) => React.ReactNode;
 }
 
+export interface EmployeeStepSummaryColumn<T = unknown> {
+  key: string;
+  header: React.ReactNode;
+  headerClassName?: string;
+  cellClassName?: string;
+  render: (summary: EmployeeStepSummary<T>) => React.ReactNode;
+}
+
 interface EmployeeStepMatrixOverviewProps<T = unknown> {
   items: EmployeeStepMatrixItem<T>[];
   steps: EmployeeStepDefinition[];
   emptyMessage?: string;
   dateColumnLabel?: string;
+  hideDropout?: boolean;
+  summaryColumns?: EmployeeStepSummaryColumn<T>[];
   stageColumnLabel?: string;
   summaryColumnLabel?: string;
   onSelectOwner?: (ownerName: string) => void;
@@ -68,7 +81,17 @@ interface EmployeeStepSummary<T = unknown> {
   inProgressCount: number;
   completedCount: number;
   stepCounts: number[];
+  stepDropoutCounts: number[];
+  stepDropoutItems: EmployeeStepDropoutItem<T>[][];
   items: EmployeeStepMatrixItem<T>[];
+}
+
+interface EmployeeStepDropoutItem<T = unknown> {
+  customerName: string;
+  dateLabel: string;
+  original: T;
+  reason: string;
+  requestId: string;
 }
 
 function resolveStepIndex<T>(
@@ -224,6 +247,8 @@ function buildEmployeeStepSummaries<T>(items: EmployeeStepMatrixItem<T>[], steps
         inProgressCount: 0,
         completedCount: 0,
         stepCounts: Array(steps.length).fill(0),
+        stepDropoutCounts: Array(steps.length).fill(0),
+        stepDropoutItems: Array.from({ length: steps.length }, () => []),
         items: [],
       } satisfies EmployeeStepSummary<T>);
 
@@ -233,9 +258,24 @@ function buildEmployeeStepSummaries<T>(items: EmployeeStepMatrixItem<T>[], steps
     existing.items.push(item);
 
     const resolvedStepIndex = resolveSummaryStepIndex(item, stepKeyIndexMap);
+    const decision = resolveDecision(item, stepKeyIndexMap);
 
     if (resolvedStepIndex !== undefined && existing.stepCounts[resolvedStepIndex] !== undefined) {
       existing.stepCounts[resolvedStepIndex] += 1;
+    }
+
+    if (decision?.marker === 'fail' && existing.stepDropoutCounts[decision.stepIndex] !== undefined) {
+      const original = item.original as Record<string, unknown> | undefined;
+      const requestId = typeof original?.requestId === 'string' ? original.requestId : item.id;
+
+      existing.stepDropoutCounts[decision.stepIndex] += 1;
+      existing.stepDropoutItems[decision.stepIndex].push({
+        customerName: item.customerName,
+        dateLabel: item.stepDates?.[steps[decision.stepIndex]?.key] || item.dateLabel,
+        original: item.original,
+        reason: item.terminalReason || decision.label || '이탈',
+        requestId,
+      });
     }
 
     grouped.set(item.ownerName, existing);
@@ -261,9 +301,12 @@ export function EmployeeStepMatrixOverview<T>({
   items,
   steps,
   emptyMessage = '직원 기준으로 확인할 데이터가 없습니다.',
+  hideDropout = false,
+  summaryColumns,
   onSelectOwner,
 }: EmployeeStepMatrixOverviewProps<T>) {
   const summaries = useMemo(() => buildEmployeeStepSummaries(items, steps), [items, steps]);
+  const [dropoutModal, setDropoutModal] = useState<{ step: string; items: EmployeeStepDropoutItem<T>[] } | null>(null);
 
   if (!summaries.length) {
     return (
@@ -282,10 +325,26 @@ export function EmployeeStepMatrixOverview<T>({
               <tr>
                 <th className="px-4 py-3 font-medium">직원</th>
                 <th className="px-4 py-3 font-medium">진행 고객</th>
+                {summaryColumns?.map((column) => (
+                  <th key={`summary-${column.key}`} className={clsx('px-4 py-3 font-medium', column.headerClassName)}>
+                    {column.header}
+                  </th>
+                ))}
                 {steps.map((step) => (
                   <th key={step.key} className="px-3 py-3 text-center font-medium">
-                    <div>{step.label}</div>
-                    <div className="mt-1 text-[10px] font-normal normal-case text-slate-400">{step.shortLabel}</div>
+                    {step.headerLabel ? (
+                      <div className="flex items-center justify-center gap-1 normal-case">
+                        <span className="text-sm font-bold text-slate-700">{step.headerLabel}</span>
+                        {step.headerCaption ? (
+                          <span className="text-[10px] font-medium text-rose-500">{step.headerCaption}</span>
+                        ) : null}
+                      </div>
+                    ) : (
+                      <>
+                        <div>{step.label}</div>
+                        <div className="mt-1 text-[10px] font-normal normal-case text-slate-400">{step.shortLabel}</div>
+                      </>
+                    )}
                   </th>
                 ))}
               </tr>
@@ -306,15 +365,37 @@ export function EmployeeStepMatrixOverview<T>({
                       {summary.inProgressCount}명
                     </span>
                   </td>
+                  {summaryColumns?.map((column) => (
+                    <td key={`${summary.ownerName}-${column.key}`} className={clsx('px-4 py-4', column.cellClassName)}>
+                      {column.render(summary)}
+                    </td>
+                  ))}
                   {summary.stepCounts.map((count, index) => (
                     <td key={`${summary.ownerName}-${steps[index].key}`} className="px-3 py-4 text-center">
-                      {count > 0 ? (
-                        <span className="inline-flex min-w-8 items-center justify-center rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-bold text-slate-700">
-                          {count}
-                        </span>
-                      ) : (
-                        <span className="text-slate-300">-</span>
-                      )}
+                      <div className="flex flex-col items-center gap-1">
+                        {count > 0 ? (
+                          <span className="inline-flex min-w-8 items-center justify-center rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-bold text-slate-700">
+                            {count}
+                          </span>
+                        ) : (
+                          <span className="text-slate-300">-</span>
+                        )}
+                        {!hideDropout && summary.stepDropoutCounts[index] > 0 ? (
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setDropoutModal({
+                                step: steps[index].headerLabel || steps[index].shortLabel || steps[index].label,
+                                items: summary.stepDropoutItems[index],
+                              });
+                            }}
+                            className="text-[10px] font-semibold text-rose-600 underline-offset-2 hover:underline"
+                          >
+                            이탈 {summary.stepDropoutCounts[index]}
+                          </button>
+                        ) : null}
+                      </div>
                     </td>
                   ))}
                 </tr>
@@ -323,6 +404,25 @@ export function EmployeeStepMatrixOverview<T>({
           </table>
         </div>
       </div>
+      <Dialog open={Boolean(dropoutModal)} onOpenChange={(open) => !open && setDropoutModal(null)}>
+        <DialogContent className="sm:max-w-[640px]">
+          <DialogHeader>
+            <DialogTitle>{dropoutModal?.step ?? ''} 이탈 건</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            {(dropoutModal?.items ?? []).map((item, index) => (
+              <div key={`${item.requestId}-${index}`} className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="font-semibold text-slate-800">{item.customerName}</div>
+                  <div className="text-xs text-slate-500">{item.dateLabel}</div>
+                </div>
+                <div className="mt-2 text-xs text-slate-500">접수ID {item.requestId}</div>
+                <div className="mt-1 text-sm text-rose-600">이탈 사유 · {item.reason}</div>
+              </div>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -395,8 +495,19 @@ export function EmployeeStepOwnerDetail<T>({
               )}
               {steps.map((step) => (
                 <th key={`detail-${step.key}`} className="px-3 py-3 text-center font-medium">
-                  <div>{step.label}</div>
-                  <div className="mt-1 text-[10px] font-normal normal-case text-slate-400">{step.shortLabel}</div>
+                  {step.headerLabel ? (
+                    <div className="flex items-center justify-center gap-1 normal-case">
+                      <span className="text-sm font-bold text-slate-700">{step.headerLabel}</span>
+                      {step.headerCaption ? (
+                        <span className="text-[10px] font-medium text-rose-500">{step.headerCaption}</span>
+                      ) : null}
+                    </div>
+                  ) : (
+                    <>
+                      <div>{step.label}</div>
+                      <div className="mt-1 text-[10px] font-normal normal-case text-slate-400">{step.shortLabel}</div>
+                    </>
+                  )}
                 </th>
               ))}
               {hasCustomDetailColumns

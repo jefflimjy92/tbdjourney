@@ -489,7 +489,7 @@ export function ContractList() {
   const [editingContractId, setEditingContractId] = useState<string | null>(null);
   const [contracts, setContracts] = useState<ContractData[]>(INITIAL_CONTRACTS);
   const defaultCustomPeriodRange = useMemo(() => getDefaultCustomPeriodRange(), []);
-  const [periodPreset, setPeriodPreset] = useState<PerformancePeriodPreset>('this_month');
+  const [periodPreset, setPeriodPreset] = useState<PerformancePeriodPreset>('all');
   const [customPeriodStartDate, setCustomPeriodStartDate] = useState(defaultCustomPeriodRange.startDate);
   const [customPeriodEndDate, setCustomPeriodEndDate] = useState(defaultCustomPeriodRange.endDate);
   const [dateType, setDateType] = useState<'startDate' | 'endDate'>('startDate');
