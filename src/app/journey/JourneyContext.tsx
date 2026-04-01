@@ -17,6 +17,7 @@ import { STEP_TO_PHASE } from '@/app/journey/phaseConfig';
 interface JourneyContextValue {
   journeys: Record<string, RequestJourney>;
   getJourney: (requestId: string) => RequestJourney | undefined;
+  patchJourney: (requestId: string, updater: (journey: RequestJourney) => RequestJourney) => void;
   ensureJourney: (journey: RequestJourney) => void;
   saveConsultationDraft: (requestId: string, draft: ConsultationDraft, actor?: string) => void;
   applyConsultationStatus: (requestId: string, draft: ConsultationDraft, stageStatus: StageStatus, nextAction?: string, actor?: string) => void;
@@ -225,6 +226,7 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
   const value = useMemo(() => ({
     journeys,
     getJourney,
+    patchJourney,
     ensureJourney,
     saveConsultationDraft,
     applyConsultationStatus,
@@ -237,7 +239,7 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
     advanceStep,
     setDbCategory,
     goToStep,
-  }), [journeys, getJourney, ensureJourney, saveConsultationDraft, applyConsultationStatus, saveMeetingDraft, assignMeetingStaff, applyMeetingStatus, updateDocumentRequirement, updateIntegrationTask, appendAudit, advanceStep, setDbCategory, goToStep]);
+  }), [journeys, getJourney, patchJourney, ensureJourney, saveConsultationDraft, applyConsultationStatus, saveMeetingDraft, assignMeetingStaff, applyMeetingStatus, updateDocumentRequirement, updateIntegrationTask, appendAudit, advanceStep, setDbCategory, goToStep]);
 
   return <JourneyContext.Provider value={value}>{children}</JourneyContext.Provider>;
 }

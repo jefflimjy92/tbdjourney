@@ -29,6 +29,7 @@ import {
 } from 'lucide-react';
 import clsx from 'clsx';
 import { toast } from 'sonner';
+import { useRole } from '@/app/auth/RoleContext';
 import { useIssuanceOperations } from '@/app/issuance/IssuanceContext';
 
 // Standard Components
@@ -52,6 +53,7 @@ import {
   EmployeeStepMatrixOverview,
   EmployeeStepOwnerDetail,
   type EmployeeStepMatrixItem,
+  type EmployeeStepSummaryColumn,
 } from '@/app/components/operations/EmployeeStepMatrixOverview';
 import {
   filterRowsByPeriod,
@@ -97,6 +99,26 @@ function getClaimJourneyStage(status: string) {
       return status;
   }
 }
+
+function getClaimRefundAmounts(ownerName: string) {
+  const seed = Array.from(ownerName).reduce((total, char) => total + char.charCodeAt(0), 0);
+  const expected = 1000000 + (seed % 4000001);
+  const actual = Math.round(expected * ((70 + (seed % 31)) / 100));
+  return { expected, actual };
+}
+
+const CLAIM_STAFF_SUMMARY_COLUMNS: EmployeeStepSummaryColumn<any>[] = [
+  {
+    key: 'expectedRefund',
+    header: '예상 환급금',
+    render: (summary) => `${getClaimRefundAmounts(summary.ownerName).expected.toLocaleString()}원`,
+  },
+  {
+    key: 'actualRefund',
+    header: '실제 환급금',
+    render: (summary) => `${getClaimRefundAmounts(summary.ownerName).actual.toLocaleString()}원`,
+  },
+];
 
 function getClaimCurrentStepIndex(status: string) {
   switch (status) {
@@ -646,11 +668,13 @@ function ClaimList({
   onSelectStaffOwner: (ownerName: string | null) => void;
   type?: 'refund' | 'simple';
 }) {
+  const { currentRole } = useRole();
   const defaultCustomPeriodRange = useMemo(() => getDefaultCustomPeriodRange(), []);
-  const [periodPreset, setPeriodPreset] = useState<PerformancePeriodPreset>('this_month');
+  const [periodPreset, setPeriodPreset] = useState<PerformancePeriodPreset>('all');
   const [customPeriodStartDate, setCustomPeriodStartDate] = useState(defaultCustomPeriodRange.startDate);
   const [customPeriodEndDate, setCustomPeriodEndDate] = useState(defaultCustomPeriodRange.endDate);
   const [activeTab, setActiveTab] = useState<'list' | 'staff'>('list');
+  const currentOwnerName = currentRole === 'claims_member' ? '최청구' : '';
   const [selectedClaimIds, setSelectedClaimIds] = useState<Set<string>>(new Set());
   const [showClaimAssignModal, setShowClaimAssignModal] = useState(false);
   const [claimAssignee, setClaimAssignee] = useState('');
@@ -698,8 +722,8 @@ function ClaimList({
           customerAddress: customerMeta?.address || '',
         };
       }).filter((item) => {
-        if (!type) return true;
-        return item.category === type;
+        const targetCategory = type || 'refund';
+        return item.category === targetCategory;
       }),
     [customerMetaMap, type]
   );
@@ -752,11 +776,21 @@ function ClaimList({
     [displayData]
   );
 
+  const visibleStaffItems = useMemo(
+    () => currentRole === 'claims_member'
+      ? staffItems.filter((item) => item.ownerName === currentOwnerName)
+      : staffItems,
+    [currentOwnerName, currentRole, staffItems]
+  );
+
   useEffect(() => {
     if (activeTab !== 'staff') {
       return;
     }
-  }, [activeTab]);
+    if (currentRole === 'claims_member') {
+      onSelectStaffOwner(null);
+    }
+  }, [activeTab, currentRole, onSelectStaffOwner]);
 
   return (
     <div className="flex flex-col h-full bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
@@ -814,9 +848,11 @@ function ClaimList({
         {activeTab === 'staff' ? (
           <div className="p-6">
             <EmployeeStepMatrixOverview
-              items={staffItems}
+              items={visibleStaffItems}
               steps={CLAIM_PROCESS_STEPS}
               emptyMessage="기간 내 확인할 청구 담당자 데이터가 없습니다."
+              hideDropout
+              summaryColumns={CLAIM_STAFF_SUMMARY_COLUMNS}
               onSelectOwner={onSelectStaffOwner}
             />
           </div>
@@ -913,7 +949,7 @@ function ClaimStaffDetailPage({
   onSelect: (item: any) => void;
 }) {
   const defaultCustomPeriodRange = useMemo(() => getDefaultCustomPeriodRange(), []);
-  const [periodPreset, setPeriodPreset] = useState<PerformancePeriodPreset>('this_month');
+  const [periodPreset, setPeriodPreset] = useState<PerformancePeriodPreset>('all');
   const [customPeriodStartDate, setCustomPeriodStartDate] = useState(defaultCustomPeriodRange.startDate);
   const [customPeriodEndDate, setCustomPeriodEndDate] = useState(defaultCustomPeriodRange.endDate);
 
@@ -938,8 +974,8 @@ function ClaimStaffDetailPage({
           customerAddress: customerMeta?.address || '',
         };
       }).filter((item) => {
-        if (!type) return true;
-        return item.category === type;
+        const targetCategory = type || 'refund';
+        return item.category === targetCategory;
       }),
     [customerMetaMap, type]
   );

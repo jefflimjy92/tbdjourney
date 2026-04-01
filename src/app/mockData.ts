@@ -140,6 +140,108 @@ const customersWithMeta = CUSTOMER_MASTER_DERIVED_MOCK.customers.map((customer) 
   analysis: buildAnalysis(customer.id),
 }));
 
+type RequestFlowStage = '접수' | '상담' | '미팅' | '청구' | '종결';
+type RequestFlowStep = 'S2' | 'S3' | 'S4' | 'S5' | 'S6' | 'S7' | 'S8' | 'S9';
+
+type RequestFlowScenario = {
+  currentStep: RequestFlowStep;
+  stage: RequestFlowStage;
+  status: string;
+  team: string;
+};
+
+type BaseRequestRow = (typeof CUSTOMER_MASTER_DERIVED_MOCK.requestRows)[number];
+
+const REQUEST_FLOW_SCENARIOS: Record<RequestFlowStage, RequestFlowScenario[]> = {
+  접수: [
+    { currentStep: 'S2', stage: '접수', status: '조회 중', team: '접수팀' },
+    { currentStep: 'S2', stage: '접수', status: '신청 완료', team: '접수팀' },
+    { currentStep: 'S2', stage: '접수', status: '배정 대기', team: '접수팀' },
+  ],
+  상담: [
+    { currentStep: 'S3', stage: '상담', status: '상담 진행', team: '상담팀' },
+    { currentStep: 'S3', stage: '상담', status: '1차 상담 완료', team: '상담팀' },
+    { currentStep: 'S4', stage: '상담', status: '보완 요청', team: '상담팀' },
+    { currentStep: 'S4', stage: '상담', status: '2차 상담 예정', team: '상담팀' },
+  ],
+  미팅: [
+    { currentStep: 'S5', stage: '미팅', status: '가망 고객', team: '미팅팀' },
+    { currentStep: 'S5', stage: '미팅', status: '미팅 확정', team: '미팅팀' },
+    { currentStep: 'S6', stage: '미팅', status: '미팅 진행', team: '미팅팀' },
+    { currentStep: 'S6', stage: '미팅', status: '후속 진행', team: '미팅팀' },
+    { currentStep: 'S7', stage: '미팅', status: '미팅 완료', team: '미팅팀' },
+    { currentStep: 'S7', stage: '미팅', status: '노쇼', team: '미팅팀' },
+  ],
+  청구: [
+    { currentStep: 'S7', stage: '청구', status: '서류 보완', team: '청구팀' },
+    { currentStep: 'S7', stage: '청구', status: '보험사 접수', team: '청구팀' },
+    { currentStep: 'S8', stage: '청구', status: '지급 대기', team: '청구팀' },
+    { currentStep: 'S8', stage: '청구', status: '심사중', team: '청구팀' },
+  ],
+  종결: [
+    { currentStep: 'S9', stage: '종결', status: '지급 완료', team: 'CS팀' },
+    { currentStep: 'S9', stage: '종결', status: '완료', team: 'CS팀' },
+    { currentStep: 'S9', stage: '종결', status: '계약실패', team: 'CS팀' },
+    { currentStep: 'S9', stage: '종결', status: '미팅취소', team: 'CS팀' },
+    { currentStep: 'S9', stage: '종결', status: '현장불가', team: 'CS팀' },
+  ],
+};
+
+function toDateOnly(dateText?: string) {
+  if (!dateText) {
+    return NOW;
+  }
+
+  const parsed = new Date(`${dateText}T00:00:00`);
+  return Number.isNaN(parsed.getTime()) ? NOW : parsed;
+}
+
+function resolveRequestStageGroup(row: BaseRequestRow, rng: () => number): RequestFlowStage {
+  const weights: RequestFlowStage[] = row.type === '간편 청구'
+    ? ['접수', '상담', '미팅', '청구', '청구', '청구', '종결', '종결']
+    : ['접수', '상담', '상담', '미팅', '미팅', '청구', '종결'];
+
+  const stageText = `${row.stage} ${row.status}`;
+  if (stageText.includes('보완')) {
+    weights.push('상담', '청구');
+  }
+  if (stageText.includes('미팅') || stageText.includes('계약')) {
+    weights.push('미팅');
+  }
+  if (stageText.includes('청구') || stageText.includes('접수')) {
+    weights.push('청구');
+  }
+  if (stageText.includes('완료') || stageText.includes('종료')) {
+    weights.push('종결');
+  }
+  if (stageText.includes('실패') || stageText.includes('취소') || stageText.includes('노쇼') || stageText.includes('불가')) {
+    weights.push('종결', '종결');
+  }
+
+  return pickOne(rng, weights);
+}
+
+function buildRequestRows() {
+  return CUSTOMER_MASTER_DERIVED_MOCK.requestRows.map((row) => {
+    const rng = mulberry32(toSeed(`${row.id}:${row.type}:${row.stage}:${row.status}:${row.manager}`));
+    const stageGroup = resolveRequestStageGroup(row, rng);
+    const scenario = pickOne(rng, REQUEST_FLOW_SCENARIOS[stageGroup]);
+    const sourceDate = toDateOnly(row.date || format(NOW, 'yyyy-MM-dd'));
+    const dayJitter = Math.floor(rng() * 19) - 9;
+
+    return {
+      ...row,
+      date: format(addDays(sourceDate, dayJitter), 'yyyy-MM-dd'),
+      stage: scenario.stage,
+      status: scenario.status,
+      team: scenario.team,
+      currentStep: scenario.currentStep,
+    };
+  });
+}
+
+const requestRowsWithFlow = buildRequestRows();
+
 export const MOCK_DATA = {
   customers: customersWithMeta,
   requests: CUSTOMER_MASTER_DERIVED_MOCK.requests,
@@ -147,7 +249,7 @@ export const MOCK_DATA = {
   meetings: CUSTOMER_MASTER_DERIVED_MOCK.meetings,
   meetingExecutionQueue: CUSTOMER_MASTER_DERIVED_MOCK.meetingExecutionQueue,
   claimsQueue: CUSTOMER_MASTER_DERIVED_MOCK.claimsQueue,
-  requestRows: CUSTOMER_MASTER_DERIVED_MOCK.requestRows,
+  requestRows: requestRowsWithFlow,
   hiraRecords,
 };
 

@@ -43,6 +43,7 @@ import { format, subDays } from 'date-fns';
 import { ContractRegistrationModal } from '@/app/components/ContractRegistrationModal';
 import { toast } from 'sonner';
 import { TransitionGuardModal } from '@/app/components/journey/TransitionGuardModal';
+import { useRole } from '@/app/auth/RoleContext';
 import { useJourney, useJourneyStore } from '@/app/journey/JourneyContext';
 import { DEFAULT_CONSULTATION_DRAFT, DEFAULT_MEETING_DRAFT } from '@/app/journey/mockJourneys';
 import { computeJourney, getEffectiveBlocking, sortRequirementAlerts, isPostMeetingComplete } from '@/app/journey/rules';
@@ -362,8 +363,8 @@ interface MeetingStaffDetailMatrixItem extends EmployeeStepMatrixItem<any> {
   meetingDateTimeLabel: string;
   meetingLocationLabel: string;
   contractResultLabel: string;
-  claimHandoffItems: Array<{ label: string; active: boolean }>;
-  integrationItems: Array<{ label: string; active: boolean }>;
+  preparationItems: Array<{ label: string; active: boolean }>;
+  integrationBadges: Array<{ label: string; active: boolean }>;
   referralCount: number;
 }
 
@@ -792,34 +793,26 @@ const MEETING_DETAIL_COLUMNS: EmployeeStepOwnerDetailColumn<any>[] = [
     },
   },
   {
-    key: 'contractResult',
-    header: '계약 현황',
-    placement: 'after_steps',
-    cellClassName: 'min-w-[140px]',
-    render: (item) => {
-      const detailItem = item as MeetingStaffDetailMatrixItem;
-      return <div className="text-xs font-semibold text-slate-700">{detailItem.contractResultLabel}</div>;
-    },
-  },
-  {
-    key: 'claimHandoff',
-    header: '청구 인계',
+    key: 'preparation',
+    header: '사전 준비 항목',
     placement: 'after_steps',
     cellClassName: 'min-w-[180px]',
     render: (item) => {
       const detailItem = item as MeetingStaffDetailMatrixItem;
       return (
         <div className="space-y-1.5">
-          {detailItem.claimHandoffItems.map((doc) => (
-            <div key={doc.label} className="flex items-center gap-2 text-xs">
+          {detailItem.preparationItems.map((prep) => (
+            <div key={prep.label} className="flex items-center gap-2 text-xs">
               <span
                 className={clsx(
-                  'inline-block h-2.5 w-2.5 rounded-full',
-                  doc.active ? 'bg-emerald-500' : 'bg-slate-300'
+                  'inline-flex h-4 w-4 items-center justify-center rounded-full',
+                  prep.active ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-100 text-slate-300'
                 )}
-              />
-              <span className={clsx(doc.active ? 'font-semibold text-slate-700' : 'text-slate-400')}>
-                {doc.label}
+              >
+                <CheckCircle2 size={12} />
+              </span>
+              <span className={clsx(prep.active ? 'font-semibold text-slate-700' : 'text-slate-400')}>
+                {prep.label}
               </span>
             </div>
           ))}
@@ -835,15 +828,15 @@ const MEETING_DETAIL_COLUMNS: EmployeeStepOwnerDetailColumn<any>[] = [
     render: (item) => {
       const detailItem = item as MeetingStaffDetailMatrixItem;
       return (
-        <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px]">
-          {detailItem.integrationItems.map((integration) => (
+        <div className="flex flex-wrap gap-2 text-[11px]">
+          {detailItem.integrationBadges.map((integration) => (
             <span
               key={integration.label}
               className={clsx(
-                'font-semibold transition-colors',
+                'rounded-full border px-2 py-1 font-semibold transition-colors',
                 integration.active
-                  ? 'text-[#1e293b]'
-                  : 'text-slate-200 decoration-slate-200 line-through'
+                  ? 'border-blue-200 bg-blue-50 text-blue-700'
+                  : 'border-slate-200 bg-slate-50 text-slate-400'
               )}
             >
               {integration.label}
@@ -854,15 +847,13 @@ const MEETING_DETAIL_COLUMNS: EmployeeStepOwnerDetailColumn<any>[] = [
     },
   },
   {
-    key: 'referralStatus',
-    header: '소개 현황',
+    key: 'contractResult',
+    header: '계약 현황',
     placement: 'after_steps',
-    cellClassName: 'min-w-[110px]',
+    cellClassName: 'min-w-[140px]',
     render: (item) => {
       const detailItem = item as MeetingStaffDetailMatrixItem;
-      return (
-        <div className="text-xs font-semibold text-slate-700">{detailItem.referralCount}명</div>
-      );
+      return <div className="text-xs font-semibold text-slate-700">{detailItem.contractResultLabel}</div>;
     },
   },
 ];
@@ -1310,11 +1301,13 @@ export function MeetingExecution({ onNavigate, type, initialRequestId, meetingSt
   const [selectedItem, setSelectedItem] = useState<any>(null);
   const [selectedStaffOwner, setSelectedStaffOwner] = useState<string | null>(null);
   const defaultCustomPeriodRange = useMemo(() => getDefaultCustomPeriodRange(), []);
-  const [periodPreset, setPeriodPreset] = useState<PerformancePeriodPreset>('this_month');
+  const [periodPreset, setPeriodPreset] = useState<PerformancePeriodPreset>('all');
   const [customPeriodStartDate, setCustomPeriodStartDate] = useState(defaultCustomPeriodRange.startDate);
   const [customPeriodEndDate, setCustomPeriodEndDate] = useState(defaultCustomPeriodRange.endDate);
   const [activeTab, setActiveTab] = useState<'list' | 'staff'>('list');
   const { journeys } = useJourneyStore();
+  const { currentRole } = useRole();
+  const currentOwnerName = currentRole === 'sales_member' ? '박미팅' : '';
 
   useEffect(() => {
     if (initialRequestId) {
@@ -1327,6 +1320,7 @@ export function MeetingExecution({ onNavigate, type, initialRequestId, meetingSt
 
   // Filter Data
   const filteredData = EXECUTION_QUEUE.filter(item => {
+     if (item.category === 'simple' || item.type === '간편 청구') return false;
      if (!type) return true;
      return item.category === type;
   });
@@ -1391,8 +1385,21 @@ export function MeetingExecution({ onNavigate, type, initialRequestId, meetingSt
         const contractResultLabel = !isMeetingDraftUntouched(draft) && formatContractResultLabel(draft) !== '-'
           ? formatContractResultLabel(draft)
           : formatFallbackContractResultLabel(item);
-        const claimHandoffItems = buildClaimHandoffItems(item, draft);
-        const integrationItems = buildIntegrationItems(item, draft, Boolean(journey));
+        const preparationItems = [
+          {
+            label: '건강체크 완료',
+            active: Boolean(draft?.hiraLinked || draft?.nhisLinked || draft?.hiraSummary),
+          },
+          {
+            label: '보장분석 완료',
+            active: Boolean(draft?.analysisFileUploaded || draft?.coverageSummary || draft?.designRequested),
+          },
+        ];
+        const integrationBadges = [
+          { label: '심평원', active: Boolean(draft?.hiraLinked) },
+          { label: '홈택스', active: Boolean(draft?.hometaxLinked) },
+          { label: '건보', active: Boolean(draft?.nhisLinked) },
+        ];
         const referralCount = buildReferralCount(item, draft);
 
         return {
@@ -1419,13 +1426,20 @@ export function MeetingExecution({ onNavigate, type, initialRequestId, meetingSt
           meetingDateTimeLabel: formatMatrixDateTimeLabel(meetingDateSource),
           meetingLocationLabel: meetingLocationSource || '-',
           contractResultLabel,
-          claimHandoffItems,
-          integrationItems,
+          preparationItems,
+          integrationBadges,
           referralCount,
           original: item,
         };
       }),
     [displayData, journeys]
+  );
+
+  const visibleStaffItems = useMemo(
+    () => currentRole === 'sales_member'
+      ? staffItems.filter((item) => item.ownerName === currentOwnerName)
+      : staffItems,
+    [currentOwnerName, currentRole, staffItems]
   );
 
   useEffect(() => {
@@ -1434,10 +1448,10 @@ export function MeetingExecution({ onNavigate, type, initialRequestId, meetingSt
       return;
     }
 
-    if (selectedStaffOwner && !staffItems.some((item) => item.ownerName === selectedStaffOwner)) {
+    if (selectedStaffOwner && !visibleStaffItems.some((item) => item.ownerName === selectedStaffOwner)) {
       setSelectedStaffOwner(null);
     }
-  }, [activeTab, selectedStaffOwner, staffItems]);
+  }, [activeTab, selectedStaffOwner, visibleStaffItems]);
 
   const title = type === 'refund' ? '3년 환급 미팅 리스트'
               : type === 'simple' ? '간편 청구 관리 리스트'
@@ -1507,7 +1521,7 @@ export function MeetingExecution({ onNavigate, type, initialRequestId, meetingSt
         {activeTab === 'staff' ? (
           <div className="p-6">
             <EmployeeStepMatrixOverview
-              items={staffItems}
+              items={visibleStaffItems}
               steps={MEETING_STEPS}
               emptyMessage="기간 내 확인할 미팅 담당자 데이터가 없습니다."
               onSelectOwner={setSelectedStaffOwner}

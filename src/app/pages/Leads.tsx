@@ -17,9 +17,10 @@ import {
   Clock,
   Zap,
   RefreshCw,
-  AlertTriangle,
 } from 'lucide-react';
 import clsx from 'clsx';
+import { toast } from 'sonner';
+import { Button } from '@/app/components/ui/button';
 import { ListPeriodControls } from '@/app/components/ListPeriodControls';
 import {
   filterRowsByPeriod,
@@ -62,6 +63,12 @@ const MOCK_ASSIGNEES = [
   { name: '문담당', currentCount: 19 },
 ];
 
+const MOCK_CALL_MEMBERS = [
+  { id: 'cm1', name: '김상담', currentCount: 5 },
+  { id: 'cm2', name: '이상담', currentCount: 3 },
+  { id: 'cm3', name: '박상담', currentCount: 4 },
+];
+
 // ── 배정 유형 ──
 type AssignmentType = 'scheduled' | 'adhoc' | 'urgent';
 const ASSIGNMENT_TYPE_CONFIG: Record<AssignmentType, { label: string; icon: React.ElementType; color: string }> = {
@@ -69,12 +76,6 @@ const ASSIGNMENT_TYPE_CONFIG: Record<AssignmentType, { label: string; icon: Reac
   adhoc: { label: '수시', icon: RefreshCw, color: 'text-slate-600 bg-slate-50 border-slate-200' },
   urgent: { label: '긴급', icon: Zap, color: 'text-rose-600 bg-rose-50 border-rose-200' },
 };
-
-const SCHEDULE_SLOTS = [
-  { time: '10:00', label: '1차 (10:00)' },
-  { time: '13:00', label: '2차 (13:00)' },
-  { time: '15:00', label: '3차 (15:00)' },
-];
 
 const MAX_PER_PERSON = 30;
 
@@ -119,23 +120,24 @@ const LEADS = [
 ];
 
 export function Leads() {
+  const [leadsData, setLeadsData] = useState(LEADS);
   const [selectedLead, setSelectedLead] = useState<any>(null);
   const defaultCustomPeriodRange = useMemo(() => getDefaultCustomPeriodRange(), []);
-  const [periodPreset, setPeriodPreset] = useState<PerformancePeriodPreset>('this_month');
+  const [periodPreset, setPeriodPreset] = useState<PerformancePeriodPreset>('all');
   const [customPeriodStartDate, setCustomPeriodStartDate] = useState(defaultCustomPeriodRange.startDate);
   const [customPeriodEndDate, setCustomPeriodEndDate] = useState(defaultCustomPeriodRange.endDate);
   const [dbFilter, setDbFilter] = useState<'all' | DbCategory>('all');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedMemberIds, setSelectedMemberIds] = useState<Set<string>>(new Set());
+  const [showDistributionPreview, setShowDistributionPreview] = useState(false);
   const [showBatchModal, setShowBatchModal] = useState(false);
   const [batchAssignee, setBatchAssignee] = useState('');
   const [assignmentType, setAssignmentType] = useState<AssignmentType>('scheduled');
-  const [scheduleSlot, setScheduleSlot] = useState(SCHEDULE_SLOTS[0].time);
-  const [showScheduleModal, setShowScheduleModal] = useState(false);
-  const [showClassifyConfirm, setShowClassifyConfirm] = useState(false);
   const [urgentReason, setUrgentReason] = useState('');
   const allRange = useMemo(
-    () => getRowsDateBounds(LEADS, (lead) => lead.date, defaultCustomPeriodRange),
-    [defaultCustomPeriodRange]
+    () => getRowsDateBounds(leadsData, (lead) => lead.date, defaultCustomPeriodRange),
+    [defaultCustomPeriodRange, leadsData]
   );
 
   // Drawer state
@@ -153,8 +155,8 @@ export function Leads() {
   );
 
   const periodFiltered = useMemo(
-    () => filterRowsByPeriod(LEADS, periodRange, (lead) => lead.date),
-    [periodRange]
+    () => filterRowsByPeriod(leadsData, periodRange, (lead) => lead.date),
+    [leadsData, periodRange]
   );
 
   const filteredLeads = useMemo(
@@ -169,6 +171,8 @@ export function Leads() {
     referral: periodFiltered.filter(l => l.dbCategory === 'referral').length,
     intro: periodFiltered.filter(l => l.dbCategory === 'intro').length,
   }), [periodFiltered]);
+
+  const isReferralTab = dbFilter === 'referral';
 
   const toggleSelect = (id: string) => {
     setSelectedIds(prev => {
@@ -199,30 +203,106 @@ export function Leads() {
     setUrgentReason('');
   };
 
-  // 자동 분류: 기왕증 → 보상DB, 소개코드 → 소개DB, 나머지 → 가능DB
-  const handleAutoClassify = () => {
-    // Mock: 실제로는 심평원 데이터 기반 분류
-    setShowClassifyConfirm(false);
-    alert('자동 분류 완료: 가능DB 7건, 보상DB 3건, 소개DB 2건 (mock)');
+  const toggleSelectMode = () => {
+    if (selectMode) {
+      setSelectMode(false);
+      setSelectedIds(new Set());
+      setSelectedMemberIds(new Set());
+      setShowDistributionPreview(false);
+      setShowBatchModal(false);
+      setBatchAssignee('');
+      return;
+    }
+
+    setSelectMode(true);
   };
 
-  // 정기 배정: 선택 시간대에 균등 배분 미리보기
-  const scheduledPreview = useMemo(() => {
-    const unassigned = periodFiltered.filter(l => l.owner === '-');
-    const assignees = MOCK_ASSIGNEES.filter(a => a.currentCount < MAX_PER_PERSON);
-    if (assignees.length === 0) return [];
-    const perPerson = Math.floor(unassigned.length / assignees.length);
-    const remainder = unassigned.length % assignees.length;
-    return assignees.map((a, i) => ({
-      name: a.name,
-      currentCount: a.currentCount,
-      newCount: perPerson + (i < remainder ? 1 : 0),
-      total: a.currentCount + perPerson + (i < remainder ? 1 : 0),
-      overLimit: a.currentCount + perPerson + (i < remainder ? 1 : 0) > MAX_PER_PERSON,
-    }));
-  }, [periodFiltered]);
+  const toggleMemberSelect = (id: string) => {
+    setSelectedMemberIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
 
-  const unassignedCount = periodFiltered.filter(l => l.owner === '-').length;
+  const selectedLeadRows = useMemo(
+    () => Array.from(selectedIds).map((id) => leadsData.find((lead) => lead.id === id)).filter(Boolean) as typeof LEADS,
+    [leadsData, selectedIds]
+  );
+
+  const selectedCallMembers = useMemo(
+    () => MOCK_CALL_MEMBERS.filter((member) => selectedMemberIds.has(member.id)),
+    [selectedMemberIds]
+  );
+
+  const distributionPreview = useMemo(() => {
+    if (selectedLeadRows.length === 0 || selectedCallMembers.length === 0) return [];
+
+    const perPerson = Math.floor(selectedLeadRows.length / selectedCallMembers.length);
+    const remainder = selectedLeadRows.length % selectedCallMembers.length;
+    let startIndex = 0;
+
+    return selectedCallMembers.map((member, index) => {
+      const assignedCount = perPerson + (index < remainder ? 1 : 0);
+      const assignedLeads = selectedLeadRows.slice(startIndex, startIndex + assignedCount);
+      startIndex += assignedCount;
+
+      return {
+        memberId: member.id,
+        memberName: member.name,
+        assignedCount,
+        leadIds: assignedLeads.map((lead) => lead.id),
+      };
+    });
+  }, [selectedCallMembers, selectedLeadRows]);
+
+  const handlePreviewDistribution = () => {
+    if (selectedLeadRows.length === 0 || selectedCallMembers.length === 0) {
+      toast.error('접수건과 콜팀원을 먼저 선택해주세요.');
+      return;
+    }
+
+    setShowDistributionPreview(true);
+  };
+
+  const handleConfirmDistribution = () => {
+    if (distributionPreview.length === 0) {
+      toast.error('배분 미리보기를 먼저 확인해주세요.');
+      return;
+    }
+
+    const ownerMap = new Map<string, string>();
+    distributionPreview.forEach((row) => {
+      row.leadIds.forEach((leadId) => ownerMap.set(leadId, row.memberName));
+    });
+
+    setLeadsData((current) => current.map((lead) => (
+      ownerMap.has(lead.id)
+        ? { ...lead, owner: ownerMap.get(lead.id)!, status: '배정됨', next_action: '전화' }
+        : lead
+    )));
+    setSelectMode(false);
+    setSelectedIds(new Set());
+    setSelectedMemberIds(new Set());
+    setShowDistributionPreview(false);
+    toast.success('균등 배분이 완료되었습니다.');
+  };
+
+  const handleReferralHandoff = () => {
+    toast.success('소개DB: 소개자 동일 영업직원에게 미팅 인계됨');
+  };
+
+  const handleDrawerPrimaryAction = () => {
+    if (!selectedLead) return;
+
+    if (selectedLead.dbCategory === 'referral') {
+      handleReferralHandoff();
+      setSelectedLead(null);
+      return;
+    }
+
+    toast.success('상담원 배정 준비가 완료되었습니다.');
+  };
 
   return (
     <div className="flex flex-col h-full bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
@@ -240,21 +320,18 @@ export function Leads() {
             onStartDateChange={setCustomPeriodStartDate}
             onEndDateChange={setCustomPeriodEndDate}
           />
+          {isReferralTab ? (
+            <Button variant="outline" onClick={handleReferralHandoff}>
+              미팅 인계
+            </Button>
+          ) : (
+            <Button variant="outline" onClick={toggleSelectMode}>
+              {selectMode ? '선택 취소' : '상담원 배정'}
+            </Button>
+          )}
           <div className="flex items-center gap-2 px-3 py-2 bg-white border border-slate-300 rounded text-sm text-slate-600 hover:bg-slate-50 cursor-pointer">
             <Filter size={16} /> 필터
           </div>
-          <button
-            onClick={() => setShowClassifyConfirm(true)}
-            className="flex items-center gap-2 px-3 py-2 bg-amber-50 text-amber-700 border border-amber-200 rounded text-sm font-medium hover:bg-amber-100"
-          >
-            <RefreshCw size={16} /> 자동 분류
-          </button>
-          <button
-            onClick={() => setShowScheduleModal(true)}
-            className="flex items-center gap-2 px-3 py-2 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded text-sm font-medium hover:bg-emerald-100"
-          >
-            <Clock size={16} /> 정기 배정 ({unassignedCount}건 미배정)
-          </button>
           {selectedIds.size > 0 && (
             <button
               onClick={() => setShowBatchModal(true)}
@@ -274,7 +351,17 @@ export function Leads() {
         {DB_FILTER_TABS.map(tab => (
           <button
             key={tab.key}
-            onClick={() => { setDbFilter(tab.key); setSelectedIds(new Set()); }}
+            onClick={() => {
+              setDbFilter(tab.key);
+              setSelectedIds(new Set());
+              setSelectedMemberIds(new Set());
+              setShowDistributionPreview(false);
+              setShowBatchModal(false);
+              setBatchAssignee('');
+              if (tab.key === 'referral') {
+                setSelectMode(false);
+              }
+            }}
             className={clsx(
               'px-4 py-2 text-xs font-bold rounded-t border-b-2 transition-colors',
               dbFilter === tab.key
@@ -293,19 +380,92 @@ export function Leads() {
         ))}
       </div>
 
+      {selectMode && !isReferralTab && (
+        <div className="border-b border-slate-200 bg-slate-50/70 px-6 py-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div className="text-sm font-bold text-[#1e293b]">균등 배분 모드</div>
+              <div className="mt-1 text-xs text-slate-500">{selectedIds.size}건 선택됨</div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button variant="outline" onClick={handlePreviewDistribution}>
+                배분 미리보기
+              </Button>
+              <Button onClick={handleConfirmDistribution} disabled={distributionPreview.length === 0}>
+                배분 확정
+              </Button>
+            </div>
+          </div>
+
+          <div className="mt-4 grid gap-4 lg:grid-cols-[320px_minmax(0,1fr)]">
+            <div className="rounded-xl border border-slate-200 bg-white p-4">
+              <div className="text-xs font-bold text-slate-600 mb-3">콜팀원 선택</div>
+              <div className="space-y-2">
+                {MOCK_CALL_MEMBERS.map((member) => (
+                  <label key={member.id} className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700">
+                    <div className="flex items-center gap-3">
+                      <input
+                        type="checkbox"
+                        checked={selectedMemberIds.has(member.id)}
+                        onChange={() => toggleMemberSelect(member.id)}
+                        className="rounded border-slate-300"
+                      />
+                      <span className="font-medium">{member.name}</span>
+                    </div>
+                    <span className="text-xs text-slate-500">현재 {member.currentCount}건</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-slate-200 bg-white p-4">
+              <div className="text-xs font-bold text-slate-600 mb-3">배분 미리보기</div>
+              {showDistributionPreview && distributionPreview.length > 0 ? (
+                <div className="overflow-hidden rounded-lg border border-slate-200">
+                  <table className="w-full text-sm">
+                    <thead className="bg-slate-50 text-xs text-slate-500">
+                      <tr>
+                        <th className="px-3 py-2 text-left font-medium">팀원명</th>
+                        <th className="px-3 py-2 text-left font-medium">배정 건수</th>
+                        <th className="px-3 py-2 text-left font-medium">배정될 접수ID 목록</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {distributionPreview.map((row) => (
+                        <tr key={row.memberId}>
+                          <td className="px-3 py-2 font-medium text-slate-700">{row.memberName}</td>
+                          <td className="px-3 py-2 text-slate-600">{row.assignedCount}건</td>
+                          <td className="px-3 py-2 text-slate-600">{row.leadIds.join(', ') || '-'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="rounded-lg border border-dashed border-slate-300 px-4 py-8 text-center text-sm text-slate-400">
+                  접수건과 팀원을 선택한 뒤 배분 미리보기를 실행하세요.
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* List Table */}
       <div className="flex-1 overflow-auto">
         <table className="w-full text-sm text-left">
           <thead className="text-xs text-slate-500 uppercase bg-slate-50 border-b border-slate-200 sticky top-0">
             <tr>
-              <th className="px-3 py-3 w-10">
-                <input
-                  type="checkbox"
-                  checked={selectedIds.size === filteredLeads.length && filteredLeads.length > 0}
-                  onChange={toggleSelectAll}
-                  className="rounded border-slate-300"
-                />
-              </th>
+              {selectMode && (
+                <th className="px-3 py-3 w-10">
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.size === filteredLeads.length && filteredLeads.length > 0}
+                    onChange={toggleSelectAll}
+                    className="rounded border-slate-300"
+                  />
+                </th>
+              )}
               <th className="px-6 py-3 font-medium">신청ID / 일시</th>
               <th className="px-6 py-3 font-medium">유입 채널</th>
               <th className="px-6 py-3 font-medium">고객명</th>
@@ -325,14 +485,16 @@ export function Leads() {
                 className={clsx("hover:bg-slate-50 transition-colors cursor-pointer", selectedIds.has(item.id) && "bg-blue-50/50")}
                 onClick={() => handleOpenDrawer(item)}
               >
-                <td className="px-3 py-4" onClick={e => e.stopPropagation()}>
-                  <input
-                    type="checkbox"
-                    checked={selectedIds.has(item.id)}
-                    onChange={() => toggleSelect(item.id)}
-                    className="rounded border-slate-300"
-                  />
-                </td>
+                {selectMode && (
+                  <td className="px-3 py-4" onClick={e => e.stopPropagation()}>
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.has(item.id)}
+                      onChange={() => toggleSelect(item.id)}
+                      className="rounded border-slate-300"
+                    />
+                  </td>
+                )}
                 <td className="px-6 py-4">
                   <div className="font-mono text-xs font-medium text-slate-600">{item.id}</div>
                   <div className="text-xs text-slate-400 mt-0.5">{item.date}</div>
@@ -469,125 +631,6 @@ export function Leads() {
         </div>
       )}
 
-      {/* Auto-Classify Confirm Modal */}
-      {showClassifyConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div className="absolute inset-0 bg-slate-900/30 backdrop-blur-sm" onClick={() => setShowClassifyConfirm(false)} />
-          <div className="relative bg-white rounded-xl shadow-2xl border border-slate-200 w-full max-w-md p-6">
-            <div className="flex justify-between items-start mb-4">
-              <div className="flex items-center gap-2">
-                <RefreshCw size={18} className="text-amber-600" />
-                <h3 className="font-bold text-[#1e293b]">DB 자동 분류</h3>
-              </div>
-              <button onClick={() => setShowClassifyConfirm(false)} className="text-slate-400 hover:text-slate-600"><X size={18} /></button>
-            </div>
-            <div className="space-y-3 mb-6">
-              <p className="text-sm text-slate-600">미분류 DB를 규칙 기반으로 자동 분류합니다.</p>
-              <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 space-y-2 text-xs">
-                <div className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-emerald-500" /> 소개코드 보유 → <span className="font-bold text-emerald-700">소개DB</span></div>
-                <div className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-amber-500" /> 기왕증(심평원) 확인 → <span className="font-bold text-amber-700">보상DB</span></div>
-                <div className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-blue-500" /> 나머지 → <span className="font-bold text-blue-700">가능DB</span></div>
-              </div>
-              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-700 flex items-start gap-2">
-                <AlertTriangle size={14} className="shrink-0 mt-0.5" />
-                <span>이미 분류된 건은 변경되지 않습니다. 신규(New) 상태만 대상입니다.</span>
-              </div>
-            </div>
-            <div className="flex justify-end gap-2">
-              <button onClick={() => setShowClassifyConfirm(false)} className="px-4 py-2 text-sm text-slate-600 border border-slate-300 rounded hover:bg-slate-50">취소</button>
-              <button onClick={handleAutoClassify} className="px-4 py-2 text-sm text-white bg-amber-600 rounded hover:bg-amber-700 font-medium">자동 분류 실행</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Scheduled Assignment Modal */}
-      {showScheduleModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div className="absolute inset-0 bg-slate-900/30 backdrop-blur-sm" onClick={() => setShowScheduleModal(false)} />
-          <div className="relative bg-white rounded-xl shadow-2xl border border-slate-200 w-full max-w-lg p-6">
-            <div className="flex justify-between items-start mb-4">
-              <div className="flex items-center gap-2">
-                <Clock size={18} className="text-emerald-600" />
-                <div>
-                  <h3 className="font-bold text-[#1e293b]">정기 배정</h3>
-                  <p className="text-xs text-slate-500 mt-0.5">미배정 {unassignedCount}건을 균등 배분합니다</p>
-                </div>
-              </div>
-              <button onClick={() => setShowScheduleModal(false)} className="text-slate-400 hover:text-slate-600"><X size={18} /></button>
-            </div>
-
-            {/* Time Slot Selection */}
-            <div className="mb-4">
-              <label className="block text-xs font-bold text-slate-600 mb-2">배정 시간대</label>
-              <div className="flex gap-2">
-                {SCHEDULE_SLOTS.map(slot => (
-                  <button
-                    key={slot.time}
-                    onClick={() => setScheduleSlot(slot.time)}
-                    className={clsx(
-                      'flex-1 px-3 py-2 rounded border text-sm font-medium transition-colors',
-                      scheduleSlot === slot.time
-                        ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
-                        : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'
-                    )}
-                  >
-                    {slot.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Preview Table */}
-            <div className="mb-4">
-              <label className="block text-xs font-bold text-slate-600 mb-2">배분 미리보기 (인당 상한 {MAX_PER_PERSON}건)</label>
-              <div className="border border-slate-200 rounded-lg overflow-hidden">
-                <table className="w-full text-sm">
-                  <thead className="bg-slate-50">
-                    <tr>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-slate-500">담당자</th>
-                      <th className="px-3 py-2 text-right text-xs font-medium text-slate-500">현재</th>
-                      <th className="px-3 py-2 text-right text-xs font-medium text-slate-500">추가</th>
-                      <th className="px-3 py-2 text-right text-xs font-medium text-slate-500">합계</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {scheduledPreview.map(row => (
-                      <tr key={row.name} className={clsx(row.overLimit && 'bg-rose-50')}>
-                        <td className="px-3 py-2 font-medium text-slate-700">{row.name}</td>
-                        <td className="px-3 py-2 text-right text-slate-500">{row.currentCount}</td>
-                        <td className="px-3 py-2 text-right text-emerald-600 font-bold">+{row.newCount}</td>
-                        <td className="px-3 py-2 text-right">
-                          <span className={clsx('font-bold', row.overLimit ? 'text-rose-600' : 'text-slate-700')}>
-                            {row.total}
-                            {row.overLimit && <AlertTriangle size={12} className="inline ml-1 text-rose-500" />}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              {scheduledPreview.some(r => r.overLimit) && (
-                <p className="text-xs text-rose-600 mt-2 flex items-center gap-1">
-                  <AlertTriangle size={12} /> 상한 초과 담당자가 있습니다. 배정 건수를 확인하세요.
-                </p>
-              )}
-            </div>
-
-            <div className="flex justify-end gap-2">
-              <button onClick={() => setShowScheduleModal(false)} className="px-4 py-2 text-sm text-slate-600 border border-slate-300 rounded hover:bg-slate-50">취소</button>
-              <button
-                onClick={() => { setShowScheduleModal(false); alert(`${scheduleSlot} 정기 배정 실행 완료 (mock)`); }}
-                className="px-4 py-2 text-sm text-white bg-emerald-600 rounded hover:bg-emerald-700 font-medium"
-              >
-                배정 실행
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Detail Drawer */}
       {selectedLead && (
         <div className="fixed inset-0 z-50 flex justify-end">
@@ -706,9 +749,10 @@ export function Leads() {
                      반려 / 보류
                   </button>
                   <button 
+                     onClick={handleDrawerPrimaryAction}
                      className="px-6 py-2 bg-[#0f766e] text-white rounded-lg text-sm font-medium hover:bg-[#0d6b63] shadow-sm flex items-center gap-2 transition-colors"
                   >
-                     상담 배정하기 <ArrowRight size={16} />
+                     {selectedLead.dbCategory === 'referral' ? '미팅 인계' : '상담원 배정'} <ArrowRight size={16} />
                   </button>
                </div>
             </div>

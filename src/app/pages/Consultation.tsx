@@ -23,6 +23,9 @@ import {
 } from 'lucide-react';
 import clsx from 'clsx';
 import { format, subDays } from 'date-fns';
+import { toast } from 'sonner';
+import { useRole } from '@/app/auth/RoleContext';
+import { useJourneyStore } from '@/app/journey/JourneyContext';
 import { detectCriticalCondition, evaluateCutRules } from '@/app/journey/rules';
 import { MOCK_DATA, getHiraPreFill } from '@/app/mockData';
 import { RefundAndMeetingInfo } from '@/app/components/RefundAndMeetingInfo';
@@ -71,10 +74,10 @@ function formatConsultationRegion(address?: string) {
 }
 
 const CONSULTATION_STEPS = [
-  { key: 'step0', label: 'STEP 0', shortLabel: '배정대기' },
-  { key: 'step1', label: 'STEP 1', shortLabel: '1차콜' },
-  { key: 'step2', label: 'STEP 2', shortLabel: '2차콜' },
-  { key: 'step3', label: 'STEP 3', shortLabel: '미팅인계' },
+  { key: 'step0', label: 'STEP 0', shortLabel: '배정대기', headerLabel: '배정대기', headerCaption: '취소 불가' },
+  { key: 'step1', label: 'STEP 1', shortLabel: '1차콜', headerLabel: '1차콜', headerCaption: '취소 불가' },
+  { key: 'step2', label: 'STEP 2', shortLabel: '2차콜', headerLabel: '2차콜', headerCaption: '취소 불가' },
+  { key: 'step3', label: 'STEP 3', shortLabel: '미팅인계', headerLabel: '미팅인계', headerCaption: '취소 불가' },
 ] as const;
 
 type ConsultationStepKey = (typeof CONSULTATION_STEPS)[number]['key'];
@@ -272,14 +275,16 @@ function ConsultationList({
   onSelectStaffOwner: (ownerName: string | null) => void;
   type?: 'refund' | 'simple';
 }) {
+  const { currentRole, roleLabel } = useRole();
   const defaultCustomPeriodRange = useMemo(() => getDefaultCustomPeriodRange(), []);
-  const [periodPreset, setPeriodPreset] = useState<PerformancePeriodPreset>('this_month');
+  const [periodPreset, setPeriodPreset] = useState<PerformancePeriodPreset>('all');
   const [customPeriodStartDate, setCustomPeriodStartDate] = useState(defaultCustomPeriodRange.startDate);
   const [customPeriodEndDate, setCustomPeriodEndDate] = useState(defaultCustomPeriodRange.endDate);
-  const [activeTab, setActiveTab] = useState<'list' | 'staff' | 'quality'>('list');
+  const [activeTab, setActiveTab] = useState<'list' | 'staff'>('list');
   const consultations = MOCK_DATA?.consultations || [];
   const customers = MOCK_DATA?.customers || [];
   const requests = MOCK_DATA?.requests || [];
+  const currentOwnerName = currentRole === 'call_member' ? '김상담' : roleLabel;
 
   const data = consultations.map(c => {
     const customer = customers.find(cust => cust.id === c.customerId);
@@ -352,11 +357,12 @@ function ConsultationList({
     [filteredByPeriod]
   );
 
-  useEffect(() => {
-    if (activeTab !== 'staff') {
-      return;
-    }
-  }, [activeTab]);
+  const visibleStaffItems = useMemo(
+    () => currentRole === 'call_member'
+      ? staffItems.filter((item) => item.ownerName === currentOwnerName)
+      : staffItems,
+    [currentOwnerName, currentRole, staffItems]
+  );
 
   return (
     <div className="flex flex-col h-full bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
@@ -384,12 +390,11 @@ function ConsultationList({
           {[
             { key: 'list', label: '건별 목록' },
             { key: 'staff', label: '직원 현황' },
-            { key: 'quality', label: '품질 모니터링' },
           ].map((tab) => (
             <button
               key={tab.key}
               type="button"
-              onClick={() => setActiveTab(tab.key as 'list' | 'staff' | 'quality')}
+              onClick={() => setActiveTab(tab.key as 'list' | 'staff')}
               className={clsx(
                 'rounded-full px-4 py-2 text-sm font-semibold transition-colors',
                 activeTab === tab.key ? 'bg-white text-[#1e293b] shadow-sm' : 'text-slate-500 hover:text-slate-700'
@@ -402,12 +407,10 @@ function ConsultationList({
       </div>
 
       <div className="flex-1 overflow-auto">
-        {activeTab === 'quality' ? (
-          <QualityMonitoringPanel data={filteredByPeriod} />
-        ) : activeTab === 'staff' ? (
+        {activeTab === 'staff' ? (
           <div className="p-6">
             <EmployeeStepMatrixOverview
-              items={staffItems}
+              items={visibleStaffItems}
               steps={CONSULTATION_STEPS}
               emptyMessage="기간 내 확인할 상담 담당자 데이터가 없습니다."
               onSelectOwner={onSelectStaffOwner}
@@ -495,7 +498,7 @@ function ConsultationStaffDetailPage({
   onSelect: (item: any) => void;
 }) {
   const defaultCustomPeriodRange = useMemo(() => getDefaultCustomPeriodRange(), []);
-  const [periodPreset, setPeriodPreset] = useState<PerformancePeriodPreset>('this_month');
+  const [periodPreset, setPeriodPreset] = useState<PerformancePeriodPreset>('all');
   const [customPeriodStartDate, setCustomPeriodStartDate] = useState(defaultCustomPeriodRange.startDate);
   const [customPeriodEndDate, setCustomPeriodEndDate] = useState(defaultCustomPeriodRange.endDate);
   const consultations = MOCK_DATA?.consultations || [];
@@ -615,6 +618,8 @@ function ConsultationStaffDetailPage({
 // --- Layout Components & Data ---
 
 function ConsultationDetail({ item, onBack, type }: { item: any, onBack: () => void, type?: 'refund' | 'simple' }) {
+   const { patchJourney } = useJourneyStore();
+   const { currentRole, roleLabel } = useRole();
    // Form State
    const [activeTab, setActiveTab] = useState('script1');
    const [showHelp, setShowHelp] = useState(false);
@@ -678,6 +683,7 @@ function ConsultationDetail({ item, onBack, type }: { item: any, onBack: () => v
    
    const customer = MOCK_DATA.customers.find(c => c.id === item.customerId);
    const hiraPreFill = getHiraPreFill(item.customerId);
+   const actorName = currentRole === 'call_member' ? '김상담' : roleLabel;
    
    // ======== Validation State Computation ========
    const validationState: ValidationState = useMemo(() => ({
@@ -813,6 +819,45 @@ function ConsultationDetail({ item, onBack, type }: { item: any, onBack: () => v
       }
    };
 
+   const handleCancelNotPossible = (step: '1st' | '2nd') => {
+      const requestId = item.requestId;
+      if (!requestId) {
+         return;
+      }
+
+      const timestamp = new Date().toISOString().slice(0, 16).replace('T', ' ');
+      const stepLabel = step === '1st' ? '1차' : '2차';
+
+      patchJourney(requestId, (journey) => ({
+         ...journey,
+         stage: 'closed',
+         status: '종결 - 취소 불가',
+         phase: 'growth',
+         currentStageStatus: {
+            ...journey.currentStageStatus,
+            stageId: 'closed',
+            statusCode: 'cancel-not-possible',
+            statusLabel: '종결 - 취소 불가',
+            enteredAt: timestamp,
+            enteredBy: actorName,
+         },
+         nextAction: '취소 불가 처리 완료',
+         auditTrail: [
+            {
+               id: `status-changed-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+               type: 'status_changed',
+               actor: actorName,
+               message: `${stepLabel} 상담 후 취소 불가 처리`,
+               tone: 'warning' as const,
+               at: timestamp,
+            },
+            ...journey.auditTrail,
+         ].slice(0, 20),
+      }));
+
+      toast.info('종결 - 취소 불가 처리가 완료되었습니다.');
+   };
+
    return (
       <div className="flex flex-col h-full bg-[#F6F7F9] overflow-hidden -m-4">
          {/* Header */}
@@ -855,6 +900,7 @@ function ConsultationDetail({ item, onBack, type }: { item: any, onBack: () => v
                      selectedReason={selectedReason}
                      onStepChange={setCurrentStep}
                      onStatusChange={setSelectedStatus}
+                     onCancelNotPossible={handleCancelNotPossible}
                      onReasonChange={setSelectedReason}
                      validationState={validationState}
                      autoBlockReasons={autoBlockReasons}
@@ -1494,7 +1540,7 @@ function ConsultationDetail({ item, onBack, type }: { item: any, onBack: () => v
                      const issues: string[] = [];
                      if (!currentStep) issues.push('상담 단계 미선택');
                      if (!selectedStatus) issues.push('상태값 미선택');
-                     if (['cancel', 'impossible', '1st-cancel', '2nd-cancel', '2nd-exception', '2nd-planner-relation'].includes(selectedStatus) && !selectedReason) {
+                     if (['cancel', 'impossible', '1st-cancel', '2nd-cancel'].includes(selectedStatus) && !selectedReason) {
                         issues.push('사유 미선택 (필수)');
                      }
                      const canSave = issues.length === 0;
@@ -2080,115 +2126,4 @@ function ConsultationDetail({ item, onBack, type }: { item: any, onBack: () => v
          </div>
       </div>
    );
-}
-
-/** D-1: 상담 품질 모니터링 패널 */
-function QualityMonitoringPanel({ data }: { data: any[] }) {
-  // Mock quality metrics derived from consultation data
-  const totalConsultations = data.length;
-  const completedCount = data.filter(d => d.status === '완료' || d.status === '인계완료').length;
-  const avgDuration = 12.4; // mock: minutes
-  const scriptComplianceRate = 87; // mock: %
-  const customerSatisfaction = 4.2; // mock: /5
-  const firstCallResolveRate = 72; // mock: %
-
-  const qualityByStaff = [
-    { name: '김상담', calls: 45, avgDuration: 11.2, scriptCompliance: 92, satisfaction: 4.5, handoffRate: 68 },
-    { name: '이상담', calls: 38, avgDuration: 14.1, scriptCompliance: 85, satisfaction: 4.0, handoffRate: 55 },
-    { name: '박상담', calls: 42, avgDuration: 10.8, scriptCompliance: 88, satisfaction: 4.3, handoffRate: 72 },
-    { name: '최상담', calls: 35, avgDuration: 15.3, scriptCompliance: 78, satisfaction: 3.8, handoffRate: 48 },
-  ];
-
-  const scriptCheckItems = [
-    { item: '인사 및 본인확인', compliance: 95 },
-    { item: '서비스 설명 (3년환급)', compliance: 88 },
-    { item: '건강보험 조회 안내', compliance: 92 },
-    { item: '환급 예상액 안내', compliance: 85 },
-    { item: '미팅 일정 제안', compliance: 78 },
-    { item: '중대질환 확인', compliance: 82 },
-    { item: '마무리 멘트', compliance: 90 },
-  ];
-
-  return (
-    <div className="p-6 space-y-6">
-      {/* Summary KPIs */}
-      <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
-        {[
-          { label: '총 상담', value: `${totalConsultations}건`, color: 'text-[#1e293b]' },
-          { label: '완료', value: `${completedCount}건`, color: 'text-emerald-600' },
-          { label: '평균 통화시간', value: `${avgDuration}분`, color: 'text-blue-600' },
-          { label: '스크립트 준수율', value: `${scriptComplianceRate}%`, color: scriptComplianceRate >= 85 ? 'text-emerald-600' : 'text-amber-600' },
-          { label: '고객 만족도', value: `${customerSatisfaction}/5`, color: 'text-[#1e293b]' },
-          { label: '1차 콜 해결률', value: `${firstCallResolveRate}%`, color: 'text-blue-600' },
-        ].map((kpi, idx) => (
-          <div key={idx} className="bg-white p-4 rounded-lg border border-slate-200 shadow-sm text-center">
-            <div className="text-[10px] text-slate-400 font-medium uppercase">{kpi.label}</div>
-            <div className={clsx("text-xl font-bold mt-1", kpi.color)}>{kpi.value}</div>
-          </div>
-        ))}
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Staff Quality Table */}
-        <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
-          <div className="px-4 py-3 border-b border-slate-200 bg-slate-50">
-            <h4 className="font-bold text-sm text-[#1e293b]">직원별 품질 지표</h4>
-          </div>
-          <table className="w-full text-xs">
-            <thead className="bg-slate-50 text-slate-500">
-              <tr>
-                <th className="px-4 py-2 text-left font-medium">담당자</th>
-                <th className="px-3 py-2 text-center font-medium">콜 수</th>
-                <th className="px-3 py-2 text-center font-medium">평균시간</th>
-                <th className="px-3 py-2 text-center font-medium">스크립트</th>
-                <th className="px-3 py-2 text-center font-medium">만족도</th>
-                <th className="px-3 py-2 text-center font-medium">인계율</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {qualityByStaff.map((staff, idx) => (
-                <tr key={idx} className="hover:bg-slate-50">
-                  <td className="px-4 py-2.5 font-bold text-[#1e293b]">{staff.name}</td>
-                  <td className="px-3 py-2.5 text-center">{staff.calls}</td>
-                  <td className="px-3 py-2.5 text-center">{staff.avgDuration}분</td>
-                  <td className="px-3 py-2.5 text-center">
-                    <span className={clsx("font-bold", staff.scriptCompliance >= 85 ? "text-emerald-600" : "text-amber-600")}>
-                      {staff.scriptCompliance}%
-                    </span>
-                  </td>
-                  <td className="px-3 py-2.5 text-center">{staff.satisfaction}</td>
-                  <td className="px-3 py-2.5 text-center font-bold">{staff.handoffRate}%</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Script Compliance Breakdown */}
-        <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
-          <div className="px-4 py-3 border-b border-slate-200 bg-slate-50">
-            <h4 className="font-bold text-sm text-[#1e293b]">스크립트 항목별 준수율</h4>
-          </div>
-          <div className="p-4 space-y-3">
-            {scriptCheckItems.map((item, idx) => (
-              <div key={idx} className="space-y-1">
-                <div className="flex justify-between text-xs">
-                  <span className="font-medium text-slate-600">{item.item}</span>
-                  <span className={clsx("font-bold", item.compliance >= 85 ? "text-emerald-600" : item.compliance >= 75 ? "text-amber-600" : "text-rose-600")}>
-                    {item.compliance}%
-                  </span>
-                </div>
-                <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                  <div
-                    className={clsx("h-full rounded-full transition-all", item.compliance >= 85 ? "bg-emerald-500" : item.compliance >= 75 ? "bg-amber-400" : "bg-rose-500")}
-                    style={{ width: `${item.compliance}%` }}
-                  />
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
 }

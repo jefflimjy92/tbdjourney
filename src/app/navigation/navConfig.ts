@@ -10,6 +10,7 @@ export type NavItem =
   | 'customers'
   | 'leads'
   | 'requests'
+  | 'case-detail'
   | 'consultation'
   | 'tm-first'
   | 'tm-second'
@@ -59,101 +60,96 @@ export interface NavMenuSection {
   children?: NavMenuChild[];
 }
 
-/** 전체 메뉴 구조 (관리자 기준) */
+/** 전체 메뉴 구조 (관리자 기준, 2-depth 그룹) */
 export const FULL_NAV_SECTIONS: NavMenuSection[] = [
   { id: 'dashboard', label: '대시보드', icon: 'PieChart', navItem: 'dashboard' },
-  { id: 'customers', label: '고객 관리', icon: 'Users', navItem: 'customers' },
-  { id: 'leads', label: 'DB 분류/배정', icon: 'Database', navItem: 'leads' },
-  { id: 'requests', label: '접수 관리', icon: 'ListTodo', navItem: 'requests' },
+
+  // 고객 관리 그룹
   {
-    id: 'consultation',
-    label: '상담/TM',
+    id: 'customer-group',
+    label: '고객 관리',
+    icon: 'Users',
+    children: [
+      { navItem: 'customers', label: '고객 목록' },
+      { navItem: 'requests', label: '처리 현황' },
+    ],
+  },
+
+  // 콜팀
+  {
+    id: 'call-group',
+    label: '콜팀',
     icon: 'Headphones',
     children: [
-      { navItem: 'consultation', label: '상담 전체' },
-      { navItem: 'tm-first', label: '1차 TM' },
-      { navItem: 'tm-second', label: '2차 TM' },
-      { navItem: 'tm-checklist', label: 'TM 체크리스트' },
+      { navItem: 'leads', label: 'DB 분류/배정' },
+      { navItem: 'consultation', label: '상담/TM' },
     ],
   },
-  { id: 'handoff', label: '미팅 인계', icon: 'ArrowRightLeft', navItem: 'handoff' },
+
+  // 영업팀
   {
-    id: 'meeting',
-    label: '미팅/계약',
-    icon: 'CalendarDays',
+    id: 'sales-group',
+    label: '영업팀',
+    icon: 'Briefcase',
     children: [
+      { navItem: 'handoff', label: '미팅 인계' },
+      { navItem: 'meeting-all', label: '미팅' },
       { navItem: 'meeting-schedule', label: '미팅 일정' },
-      { navItem: 'meeting-all', label: '미팅 전체' },
-      { navItem: 'meeting-pre-analysis', label: '사전 분석' },
-      { navItem: 'meeting-on-site', label: '미팅 실행' },
-      { navItem: 'meeting-contract-close', label: '계약 체결' },
+      { navItem: 'contracts', label: '계약 목록' },
     ],
   },
-  { id: 'contracts', label: '계약 목록', icon: 'Briefcase', navItem: 'contracts' },
+
+  // 청구팀
   {
-    id: 'claims',
-    label: '청구/분석',
+    id: 'claims-group',
+    label: '청구팀',
     icon: 'FileCheck',
     children: [
-      { navItem: 'claims-all', label: '청구 전체' },
-      { navItem: 'claims-receipt', label: '청구 접수' },
-      { navItem: 'claims-unpaid', label: '미지급금 분석' },
-      { navItem: 'claims-doc-issuance', label: '서류 발급' },
-      { navItem: 'claims-final', label: '최종 분석' },
+      { navItem: 'claims-all', label: '3년환급' },
+      { navItem: 'simple-claims', label: '간편청구' },
+      { navItem: 'issuance-master', label: '서류발급' },
     ],
   },
-  {
-    id: 'issuance',
-    label: '발급 관리',
-    icon: 'Stamp',
-    children: [
-      { navItem: 'issuance-master', label: '발급 마스터' },
-      { navItem: 'issuance-manager', label: '발급 관리자' },
-      { navItem: 'issuance-staff', label: '발급 담당자' },
-    ],
-  },
-  {
-    id: 'payment',
-    label: '지급/사후',
-    icon: 'Banknote',
-    children: [
-      { navItem: 'payment-confirm', label: '지급 확인' },
-      { navItem: 'aftercare', label: '사후 관리' },
-    ],
-  },
-  {
-    id: 'growth',
-    label: 'Growth Loop',
-    icon: 'Repeat',
-    children: [
-      { navItem: 'referral-management', label: '소개 관리' },
-    ],
-  },
-  { id: 'simple-claims', label: '간편청구', icon: 'Zap', navItem: 'simple-claims' },
-  { id: 'voc', label: 'CS / VOC', icon: 'MessageSquare', navItem: 'voc' },
-  { id: 'compliance', label: '준법/개인정보', icon: 'Shield', navItem: 'compliance' },
-  { id: 'admin-operations', label: '관리업무', icon: 'Briefcase', navItem: 'admin-operations' },
-  { id: 'dropoff', label: '이탈 로그', icon: 'ScrollText', navItem: 'dropoff' },
+
   { id: 'daily-report', label: '일일 보고서', icon: 'BarChart3', navItem: 'daily-report' },
-  { id: 'documents', label: '문서 관리', icon: 'Files', navItem: 'documents' },
+  { id: 'dropoff', label: '이탈 로그', icon: 'ScrollText', navItem: 'dropoff' },
   { id: 'settings', label: '설정', icon: 'Settings', navItem: 'settings' },
 ];
 
-/** 역할별 보이는 메뉴 섹션 ID */
-const ROLE_VISIBLE_SECTIONS: Record<TeamRole, string[]> = {
-  call_member: ['dashboard', 'requests', 'consultation', 'handoff', 'simple-claims', 'daily-report'],
-  call_lead: ['dashboard', 'customers', 'leads', 'requests', 'consultation', 'handoff', 'simple-claims', 'daily-report'],
-  sales_member: ['dashboard', 'meeting', 'contracts', 'documents'],
-  sales_lead: ['dashboard', 'customers', 'leads', 'meeting', 'contracts', 'daily-report', 'documents'],
-  claims_member: ['dashboard', 'claims', 'issuance', 'payment', 'simple-claims', 'documents'],
-  claims_lead: ['dashboard', 'customers', 'claims', 'issuance', 'payment', 'simple-claims', 'daily-report', 'documents'],
-  cs: ['dashboard', 'customers', 'requests', 'voc', 'dropoff', 'documents'],
-  compliance: ['dashboard', 'customers', 'requests', 'compliance', 'documents', 'settings'],
-  admin: FULL_NAV_SECTIONS.map(s => s.id),
+/** 역할별 보이는 NavItem 목록 (그룹 내 개별 항목 수준 필터링) */
+const ROLE_VISIBLE_ITEMS: Record<TeamRole, NavItem[] | 'all'> = {
+  call_member:  ['dashboard', 'requests', 'consultation', 'daily-report'],
+  call_lead:    ['dashboard', 'requests', 'leads', 'consultation', 'daily-report'],
+  sales_member: ['dashboard', 'meeting-all', 'meeting-schedule', 'contracts'],
+  sales_lead:   ['dashboard', 'customers', 'handoff', 'meeting-all', 'meeting-schedule', 'contracts', 'daily-report'],
+  claims_member:['dashboard', 'claims-all', 'simple-claims', 'issuance-master'],
+  claims_lead:  ['dashboard', 'customers', 'claims-all', 'simple-claims', 'issuance-master', 'daily-report'],
+  cs:           ['dashboard', 'customers', 'requests', 'dropoff'],
+  compliance:   ['dashboard', 'customers', 'requests', 'settings'],
+  admin:        'all',
 };
 
-/** 역할에 맞는 네비게이션 섹션 반환 */
+/** 역할에 맞는 네비게이션 섹션 반환 (그룹 내 children도 필터링) */
 export function getNavSectionsForRole(role: TeamRole): NavMenuSection[] {
-  const visibleIds = ROLE_VISIBLE_SECTIONS[role];
-  return FULL_NAV_SECTIONS.filter(section => visibleIds.includes(section.id));
+  const allowed = ROLE_VISIBLE_ITEMS[role];
+
+  return FULL_NAV_SECTIONS
+    .map((section) => {
+      // Flat item
+      if (section.navItem) {
+        if (allowed === 'all' || allowed.includes(section.navItem)) return section;
+        return null;
+      }
+      // Group with children — 역할별 children 필터링
+      if (section.children) {
+        const visibleChildren =
+          allowed === 'all'
+            ? section.children
+            : section.children.filter((c) => (allowed as NavItem[]).includes(c.navItem));
+        if (visibleChildren.length === 0) return null;
+        return { ...section, children: visibleChildren };
+      }
+      return null;
+    })
+    .filter((s): s is NavMenuSection => s !== null);
 }

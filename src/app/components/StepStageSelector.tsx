@@ -41,6 +41,7 @@ export interface StepStageSelectorProps {
    selectedReason?: string;
    onStepChange?: (step: string) => void;
    onStatusChange?: (status: string) => void;
+   onCancelNotPossible?: (step: '1st' | '2nd') => void;
    onReasonChange?: (reason: string) => void;
    validationState?: ValidationState;
    autoBlockReasons?: string[];      // 자동 불가 판정 사유 목록
@@ -81,9 +82,7 @@ const STEP_STAGES = [
       options: [
          { id: '2nd-cancel', label: '2차 상담 후 취소' },
          { id: '2nd-absent', label: '2차 상담 후 부재' },
-         { id: '2nd-complete', label: '2차 상담 완료' },
-         { id: '2nd-exception', label: '보험사 예외질환' },
-         { id: '2nd-planner-relation', label: '설계사 친인척 관계' }
+         { id: '2nd-complete', label: '2차 상담 완료' }
       ]
    },
    { 
@@ -109,6 +108,8 @@ const REASON_OPTIONS: Record<string, Array<{ id: string; label: string }>> = {
       { id: 'no-insurance', label: '보험 미가입' },
       { id: 'payment-default', label: '미납/실효' },
       { id: 'designer-relative', label: '설계사 친인척' },
+      { id: 'exception-disease', label: '보험사 예외질환' },
+      { id: 'planner-relative', label: '설계사 친인척 관계' },
       { id: 'critical-active', label: '중대질환 미완치' },
       { id: 'age-over-70', label: '70세 이상' },
       { id: 'long-hospitalization', label: '14일 초과 입원' },
@@ -152,16 +153,6 @@ const REASON_OPTIONS: Record<string, Array<{ id: string; label: string }>> = {
    'long-hospitalization': [
       { id: 'still-admitted', label: '현재 입원 중' },
       { id: 'post-discharge', label: '퇴원 후 관리' },
-      { id: 'other', label: '기타' }
-   ],
-   '2nd-exception': [
-      { id: 'samsung-exception', label: '삼성화재 예외질환' },
-      { id: 'critical-illness', label: '중대질환 미완치' },
-      { id: 'other', label: '기타' }
-   ],
-   '2nd-planner-relation': [
-      { id: 'family', label: '친인척 관계 확인' },
-      { id: 'close-friend', label: '지인 관계' },
       { id: 'other', label: '기타' }
    ]
 };
@@ -212,6 +203,7 @@ export function StepStageSelector({
    selectedReason = '',
    onStepChange = () => {},
    onStatusChange = () => {},
+   onCancelNotPossible,
    onReasonChange = () => {},
    validationState,
    autoBlockReasons = [],
@@ -307,6 +299,12 @@ export function StepStageSelector({
       
       setValidationError(null);
       onStatusChange(statusId);
+      if (statusId === '1st-cancel') {
+         onCancelNotPossible?.('1st');
+      }
+      if (statusId === '2nd-cancel') {
+         onCancelNotPossible?.('2nd');
+      }
       onReasonChange('');
    };
 

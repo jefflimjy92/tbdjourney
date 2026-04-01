@@ -289,6 +289,8 @@ const getWeeksInMonth = (date: Date) => {
    return weeks;
 };
 
+const getWeekKey = (date: Date) => `${format(date, 'yyyy')}-W${String(getWeek(date, { locale: ko })).padStart(2, '0')}`;
+
 // --- Main Component ---
 
 interface MeetingScheduleProps {
@@ -297,13 +299,15 @@ interface MeetingScheduleProps {
 
 export function MeetingSchedule({ onNavigate }: MeetingScheduleProps) {
   const { journeys } = useJourneyStore();
-  const [viewMode, setViewMode] = useState<'calendar' | 'list'>('calendar');
+  const currentWeek = getWeekKey(new Date());
+  const [viewMode, setViewMode] = useState<'staff' | 'time'>('staff');
   const [currentDate, setCurrentDate] = useState(new Date());
-  const [selectedWeek, setSelectedWeek] = useState<number | null>(null); // null = All weeks
+  const [selectedWeek, setSelectedWeek] = useState(currentWeek);
   const [selectedTeam, setSelectedTeam] = useState('all');
   const [selectedStaff, setSelectedStaff] = useState('all');
   const [selectedDateDetail, setSelectedDateDetail] = useState<Date | null>(null); // For sidebar details (date)
   const [selectedMeeting, setSelectedMeeting] = useState<any | null>(null); // For detail view (meeting)
+  const [statusFilter, setStatusFilter] = useState<string>('all');
   const allMeetings = useMemo(() => (
     [...MEETINGS_DATA, ...buildJourneyScheduleItems(journeys)].sort((a, b) => {
       if (a.date !== b.date) return a.date.localeCompare(b.date);
@@ -338,20 +342,57 @@ export function MeetingSchedule({ onNavigate }: MeetingScheduleProps) {
   const filteredMeetings = allMeetings.filter(m => {
     if (selectedTeam !== 'all' && m.team !== selectedTeam) return false;
     if (selectedStaff !== 'all' && m.staff !== STAFF_LIST.find(s => s.id === selectedStaff)?.name) return false;
+    if (selectedWeek && getWeekKey(parseISO(m.date)) !== selectedWeek) return false;
+    if (statusFilter === 'contract-completed' && m.status !== 'contract-completed') return false;
+    if (statusFilter === 'scheduled' && m.status !== 'scheduled') return false;
+    if (statusFilter === 'followup' && m.status !== 'followup') return false;
+    if (statusFilter === 'pending-assignment' && m.status !== 'pending-assignment') return false;
+    if (statusFilter === 'cancelled' && m.status !== 'cancelled') return false;
+    if (statusFilter === 'impossible' && !['impossible', 'noshow'].includes(m.status)) return false;
     return true;
   });
   const visibleStaffOptions = STAFF_LIST.filter((staff) => (
     staff.id === 'all' || selectedTeam === 'all' || staff.team === selectedTeam
   ));
+  const weekOptions = useMemo(
+    () => getWeeksInMonth(currentDate).map((weekStart, index) => ({
+      key: getWeekKey(weekStart),
+      label: `${index + 1}주차`,
+    })),
+    [currentDate]
+  );
+  const staffGroupedMeetings = useMemo(() => {
+    const grouped = new Map<string, MeetingScheduleItem[]>();
+
+    filteredMeetings.forEach((meeting) => {
+      const key = meeting.staff;
+      const existing = grouped.get(key) || [];
+      existing.push(meeting);
+      grouped.set(key, existing);
+    });
+
+    return Array.from(grouped.entries())
+      .map(([staffName, meetings]) => ({
+        staffName,
+        meetings: meetings.sort((a, b) => {
+          const dateCompare = a.date.localeCompare(b.date);
+          if (dateCompare !== 0) return dateCompare;
+          return a.time.localeCompare(b.time);
+        }),
+      }))
+      .sort((a, b) => a.staffName.localeCompare(b.staffName, 'ko'));
+  }, [filteredMeetings]);
 
   const handlePrev = () => {
-      setCurrentDate(subMonths(currentDate, 1));
-      setSelectedWeek(null);
+      const nextDate = subMonths(currentDate, 1);
+      setCurrentDate(nextDate);
+      setSelectedWeek(getWeekKey(nextDate));
   };
 
   const handleNext = () => {
-      setCurrentDate(addMonths(currentDate, 1));
-      setSelectedWeek(null);
+      const nextDate = addMonths(currentDate, 1);
+      setCurrentDate(nextDate);
+      setSelectedWeek(getWeekKey(nextDate));
   };
 
   const getTitle = () => {
@@ -377,13 +418,13 @@ export function MeetingSchedule({ onNavigate }: MeetingScheduleProps) {
       <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-4 sticky top-0 z-10">
         <div className="flex items-center gap-2">
            <div className="flex gap-2">
-              <StatChip label="전체" value={stats.total} color="bg-slate-100 text-slate-600" />
-              <StatChip label="계약완료" value={stats.contractCompleted} color="bg-emerald-100 text-emerald-700" />
-              <StatChip label="확정" value={stats.scheduled} color="bg-blue-100 text-blue-700" />
-              <StatChip label="후속" value={stats.followup} color="bg-indigo-100 text-indigo-700" />
-              <StatChip label="배정중" value={stats.pending} color="bg-amber-100 text-amber-700" />
-              <StatChip label="취소" value={stats.cancelled} color="bg-rose-100 text-rose-700" />
-              <StatChip label="불가" value={stats.impossible} color="bg-orange-100 text-orange-700" />
+              <StatChip label="전체" value={stats.total} color="bg-slate-100 text-slate-600" active={statusFilter === 'all'} onClick={() => setStatusFilter('all')} />
+              <StatChip label="계약완료" value={stats.contractCompleted} color="bg-emerald-100 text-emerald-700" active={statusFilter === 'contract-completed'} onClick={() => setStatusFilter('contract-completed')} />
+              <StatChip label="확정" value={stats.scheduled} color="bg-blue-100 text-blue-700" active={statusFilter === 'scheduled'} onClick={() => setStatusFilter('scheduled')} />
+              <StatChip label="후속" value={stats.followup} color="bg-indigo-100 text-indigo-700" active={statusFilter === 'followup'} onClick={() => setStatusFilter('followup')} />
+              <StatChip label="배정중" value={stats.pending} color="bg-amber-100 text-amber-700" active={statusFilter === 'pending-assignment'} onClick={() => setStatusFilter('pending-assignment')} />
+              <StatChip label="취소" value={stats.cancelled} color="bg-rose-100 text-rose-700" active={statusFilter === 'cancelled'} onClick={() => setStatusFilter('cancelled')} />
+              <StatChip label="불가" value={stats.impossible} color="bg-orange-100 text-orange-700" active={statusFilter === 'impossible'} onClick={() => setStatusFilter('impossible')} />
            </div>
         </div>
 
@@ -418,22 +459,22 @@ export function MeetingSchedule({ onNavigate }: MeetingScheduleProps) {
 
            <div className="flex bg-slate-100 p-1 rounded-lg border border-slate-200">
               <button 
-                 onClick={() => setViewMode('calendar')}
+                 onClick={() => setViewMode('staff')}
                  className={clsx(
                     "flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-bold transition-all",
-                    viewMode === 'calendar' ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700"
+                    viewMode === 'staff' ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700"
                  )}
               >
-                 <CalendarIcon size={14} /> 캘린더형
+                 <Users size={14} /> 직원별
               </button>
               <button 
-                 onClick={() => setViewMode('list')}
+                 onClick={() => setViewMode('time')}
                  className={clsx(
                     "flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-bold transition-all",
-                    viewMode === 'list' ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700"
+                    viewMode === 'time' ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700"
                  )}
               >
-                 <ListIcon size={14} /> 목록형
+                 <ListIcon size={14} /> 시간순
               </button>
            </div>
         </div>
@@ -452,46 +493,25 @@ export function MeetingSchedule({ onNavigate }: MeetingScheduleProps) {
                 <button onClick={handleNext} className="p-1 hover:bg-slate-50 rounded text-slate-500"><ChevronRight size={18} /></button>
             </div>
 
-            {/* Week Filter Buttons */}
-            {viewMode === 'calendar' && (
-               <div className="absolute top-4 left-[280px] z-10 flex gap-1">
-                  <button
-                     onClick={() => setSelectedWeek(null)}
-                     className={clsx(
-                        "px-3 py-1.5 text-xs font-bold rounded-lg border transition-all",
-                        selectedWeek === null
-                           ? "bg-[#1e293b] text-white border-[#1e293b]" 
-                           : "bg-white text-slate-500 border-slate-200 hover:bg-slate-50"
-                     )}
-                  >
-                     전체
-                  </button>
-                  {getWeeksInMonth(currentDate).map((weekStart, idx) => (
-                     <button
-                        key={idx}
-                        onClick={() => setSelectedWeek(idx)}
-                        className={clsx(
-                           "px-3 py-1.5 text-xs font-bold rounded-lg border transition-all",
-                           selectedWeek === idx
-                              ? "bg-[#1e293b] text-white border-[#1e293b]" 
-                              : "bg-white text-slate-500 border-slate-200 hover:bg-slate-50"
-                        )}
-                     >
-                        {idx + 1}주차
-                     </button>
-                  ))}
-               </div>
-            )}
+            <div className="absolute top-4 left-[280px] z-10 flex gap-1">
+              {weekOptions.map((week) => (
+                <button
+                  key={week.key}
+                  onClick={() => setSelectedWeek(week.key)}
+                  className={clsx(
+                    "px-3 py-1.5 text-xs font-bold rounded-lg border transition-all",
+                    selectedWeek === week.key
+                      ? "bg-[#1e293b] text-white border-[#1e293b]"
+                      : "bg-white text-slate-500 border-slate-200 hover:bg-slate-50"
+                  )}
+                >
+                  {week.label}
+                </button>
+              ))}
+            </div>
 
-            {viewMode === 'calendar' ? (
-               <MeetingCalendar 
-                  currentDate={currentDate} 
-                  meetings={filteredMeetings} 
-                  onNavigate={onNavigate} 
-                  selectedWeek={selectedWeek}
-                  onSelectDate={setSelectedDateDetail}
-                  onSelectMeeting={setSelectedMeeting}
-               />
+            {viewMode === 'staff' ? (
+               <MeetingStaffGroupedList meetingsByStaff={staffGroupedMeetings} onSelectMeeting={setSelectedMeeting} />
             ) : (
                <MeetingList 
                   meetings={filteredMeetings} 
@@ -584,13 +604,72 @@ export function MeetingSchedule({ onNavigate }: MeetingScheduleProps) {
 
 // --- Sub Components ---
 
-function StatChip({ label, value, color }: { label: string, value: number, color: string }) {
+function StatChip({ label, value, color, active = false, onClick }: { label: string, value: number, color: string, active?: boolean, onClick?: () => void }) {
    return (
-      <div className={clsx("flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold", color)}>
+      <button
+         type="button"
+         onClick={onClick}
+         className={clsx("flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-bold transition", color, active && 'ring-2 ring-offset-1 ring-slate-300')}
+      >
          <span>{label}</span>
          <span className="bg-white/50 px-1.5 rounded text-current">{value}</span>
-      </div>
+      </button>
    );
+}
+
+function MeetingStaffGroupedList({
+  meetingsByStaff,
+  onSelectMeeting,
+}: {
+  meetingsByStaff: Array<{ staffName: string; meetings: MeetingScheduleItem[] }>;
+  onSelectMeeting: (meeting: MeetingScheduleItem) => void;
+}) {
+  if (!meetingsByStaff.length) {
+    return (
+      <div className="flex h-full items-center justify-center text-sm text-slate-400">
+        표시할 미팅 일정이 없습니다.
+      </div>
+    );
+  }
+
+  return (
+    <div className="h-full overflow-y-auto px-6 py-20">
+      <div className="space-y-5">
+        {meetingsByStaff.map((group) => (
+          <section key={group.staffName} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="text-base font-bold text-slate-900">{group.staffName}</h3>
+              <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
+                {group.meetings.length}건
+              </span>
+            </div>
+            <div className="space-y-3">
+              {group.meetings.map((meeting) => (
+                <button
+                  key={meeting.id}
+                  type="button"
+                  onClick={() => onSelectMeeting(meeting)}
+                  className="flex w-full items-start justify-between rounded-xl border border-slate-200 px-4 py-3 text-left transition hover:bg-slate-50"
+                >
+                  <div>
+                    <div className="text-sm font-bold text-slate-900">
+                      {meeting.time} · {meeting.customer}
+                    </div>
+                    <div className="mt-1 text-xs text-slate-500">
+                      {meeting.date} · {formatShortAddress(meeting.location)}
+                    </div>
+                  </div>
+                  <span className={clsx("rounded-full border px-2 py-1 text-[10px] font-bold", getMeetingStatusBadgeClassName(meeting.status))}>
+                    {getMeetingStatusLabel(meeting)}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </section>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 // Merged Calendar Component
