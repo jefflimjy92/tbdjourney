@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import clsx from 'clsx';
 import { format, subDays } from 'date-fns';
+import { detectCriticalCondition, evaluateCutRules } from '@/app/journey/rules';
 import { MOCK_DATA, getHiraPreFill } from '@/app/mockData';
 import { RefundAndMeetingInfo } from '@/app/components/RefundAndMeetingInfo';
 import { CustomerInputSection } from '@/app/components/CustomerInputSection';
@@ -46,9 +47,11 @@ import {
   type PerformancePeriodPreset,
 } from '@/app/issuance/performancePeriodUtils';
 
-interface ConsultationProps {
+export interface ConsultationProps {
   type?: 'refund' | 'simple'; // 3년 환급 | 간편 청구
   initialRequestId?: string | null;
+  /** TM 단계 필터: 'first' = 1차TM만, 'second' = 2차TM만, 'checklist' = 인계 체크리스트만 */
+  tmStageFilter?: 'first' | 'second' | 'checklist';
 }
 
 // Helper to normalize type
@@ -203,7 +206,7 @@ function getConsultationStepMeta(item: { date: string; status: string; result: s
   };
 }
 
-export function Consultation({ type, initialRequestId }: ConsultationProps) {
+export function Consultation({ type, initialRequestId, tmStageFilter }: ConsultationProps) {
   const [view, setView] = useState<'list' | 'detail'>('list');
   const [selectedItem, setSelectedItem] = useState<any>(null);
   const [selectedStaffOwner, setSelectedStaffOwner] = useState<string | null>(null);
@@ -273,7 +276,7 @@ function ConsultationList({
   const [periodPreset, setPeriodPreset] = useState<PerformancePeriodPreset>('this_month');
   const [customPeriodStartDate, setCustomPeriodStartDate] = useState(defaultCustomPeriodRange.startDate);
   const [customPeriodEndDate, setCustomPeriodEndDate] = useState(defaultCustomPeriodRange.endDate);
-  const [activeTab, setActiveTab] = useState<'list' | 'staff'>('list');
+  const [activeTab, setActiveTab] = useState<'list' | 'staff' | 'quality'>('list');
   const consultations = MOCK_DATA?.consultations || [];
   const customers = MOCK_DATA?.customers || [];
   const requests = MOCK_DATA?.requests || [];
@@ -381,11 +384,12 @@ function ConsultationList({
           {[
             { key: 'list', label: '건별 목록' },
             { key: 'staff', label: '직원 현황' },
+            { key: 'quality', label: '품질 모니터링' },
           ].map((tab) => (
             <button
               key={tab.key}
               type="button"
-              onClick={() => setActiveTab(tab.key as 'list' | 'staff')}
+              onClick={() => setActiveTab(tab.key as 'list' | 'staff' | 'quality')}
               className={clsx(
                 'rounded-full px-4 py-2 text-sm font-semibold transition-colors',
                 activeTab === tab.key ? 'bg-white text-[#1e293b] shadow-sm' : 'text-slate-500 hover:text-slate-700'
@@ -398,7 +402,9 @@ function ConsultationList({
       </div>
 
       <div className="flex-1 overflow-auto">
-        {activeTab === 'staff' ? (
+        {activeTab === 'quality' ? (
+          <QualityMonitoringPanel data={filteredByPeriod} />
+        ) : activeTab === 'staff' ? (
           <div className="p-6">
             <EmployeeStepMatrixOverview
               items={staffItems}
@@ -721,7 +727,27 @@ function ConsultationDetail({ item, onBack, type }: { item: any, onBack: () => v
       }
       return reasons;
    }, [validationState, insuranceStatus, paymentStatus, joinPath]);
-   
+
+   // A-6: 중대질환 자동 감지 (criticalOptions + criticalDiseaseDetail 기반)
+   const criticalDetection = useMemo(() => {
+      const allText = [...criticalOptions, criticalDiseaseDetail].join(' ');
+      if (!allText.trim()) return null;
+      return detectCriticalCondition(allText);
+   }, [criticalOptions, criticalDiseaseDetail]);
+
+   // Cut-rule 자동 평가 (부재횟수, 거절, 중대질환, 무응답 기간)
+   const cutRuleResult = useMemo(() => {
+      // Mock: 실제로는 서버에서 contactAttempts, lastContactAt 가져옴
+      const mockContactAttempts = selectedStatus === 'absent' ? 5 : (selectedStatus === 'waiting' ? 0 : 2);
+      const isRefusal = ['cancel', 'impossible', '1st-cancel', '2nd-cancel'].includes(selectedStatus);
+      return evaluateCutRules({
+        contactAttempts: mockContactAttempts,
+        explicitRefusal: isRefusal,
+        isCritical: criticalDetection?.isCritical ?? false,
+        daysSinceLastContact: 0,
+      });
+   }, [selectedStatus, criticalDetection]);
+
    // Refs for scrolling to sections
    const insuranceRef = useRef<HTMLDivElement>(null);
    const trafficAccidentRef = useRef<HTMLDivElement>(null);
@@ -833,7 +859,43 @@ function ConsultationDetail({ item, onBack, type }: { item: any, onBack: () => v
                      validationState={validationState}
                      autoBlockReasons={autoBlockReasons}
                   />
-                  
+
+                  {/* A-6: 중대질환 자동 감지 배너 */}
+                  {criticalDetection?.isCritical && (
+                     <div className="bg-rose-50 border border-rose-300 rounded-lg px-4 py-3 flex items-start gap-3">
+                        <AlertTriangle size={18} className="text-rose-500 mt-0.5 shrink-0" />
+                        <div>
+                           <p className="text-xs font-bold text-rose-700">중대질환 감지됨</p>
+                           <p className="text-[11px] text-rose-600 mt-0.5">
+                              감지 키워드: <span className="font-bold">{criticalDetection.matchedKeywords.join(', ')}</span>
+                              — 팀리드 확인 및 별도 프로세스 필요
+                           </p>
+                        </div>
+                     </div>
+                  )}
+
+                  {/* Cut-rule 자동 판정 배너 */}
+                  {cutRuleResult.shouldCut && (
+                     <div className="bg-orange-50 border border-orange-300 rounded-lg px-4 py-3 flex items-start gap-3">
+                        <AlertTriangle size={18} className="text-orange-600 mt-0.5 shrink-0" />
+                        <div className="flex-1">
+                           <p className="text-xs font-bold text-orange-800">Cut-rule 해당 — 진행중단 권고</p>
+                           <p className="text-[11px] text-orange-700 mt-0.5">
+                              사유: <span className="font-bold">{cutRuleResult.reason}</span>
+                              — 이탈 처리 또는 팀장 판단이 필요합니다.
+                           </p>
+                           <div className="flex gap-2 mt-2">
+                              <button className="px-2.5 py-1 text-[11px] font-bold bg-orange-600 text-white rounded hover:bg-orange-700">
+                                 이탈 처리
+                              </button>
+                              <button className="px-2.5 py-1 text-[11px] font-bold text-orange-700 bg-white border border-orange-300 rounded hover:bg-orange-50">
+                                 팀장 검토 요청
+                              </button>
+                           </div>
+                        </div>
+                     </div>
+                  )}
+
                   {/* Divider */}
                   <div className="bg-[#f1f5f9] h-px" />
 
@@ -2018,4 +2080,115 @@ function ConsultationDetail({ item, onBack, type }: { item: any, onBack: () => v
          </div>
       </div>
    );
+}
+
+/** D-1: 상담 품질 모니터링 패널 */
+function QualityMonitoringPanel({ data }: { data: any[] }) {
+  // Mock quality metrics derived from consultation data
+  const totalConsultations = data.length;
+  const completedCount = data.filter(d => d.status === '완료' || d.status === '인계완료').length;
+  const avgDuration = 12.4; // mock: minutes
+  const scriptComplianceRate = 87; // mock: %
+  const customerSatisfaction = 4.2; // mock: /5
+  const firstCallResolveRate = 72; // mock: %
+
+  const qualityByStaff = [
+    { name: '김상담', calls: 45, avgDuration: 11.2, scriptCompliance: 92, satisfaction: 4.5, handoffRate: 68 },
+    { name: '이상담', calls: 38, avgDuration: 14.1, scriptCompliance: 85, satisfaction: 4.0, handoffRate: 55 },
+    { name: '박상담', calls: 42, avgDuration: 10.8, scriptCompliance: 88, satisfaction: 4.3, handoffRate: 72 },
+    { name: '최상담', calls: 35, avgDuration: 15.3, scriptCompliance: 78, satisfaction: 3.8, handoffRate: 48 },
+  ];
+
+  const scriptCheckItems = [
+    { item: '인사 및 본인확인', compliance: 95 },
+    { item: '서비스 설명 (3년환급)', compliance: 88 },
+    { item: '건강보험 조회 안내', compliance: 92 },
+    { item: '환급 예상액 안내', compliance: 85 },
+    { item: '미팅 일정 제안', compliance: 78 },
+    { item: '중대질환 확인', compliance: 82 },
+    { item: '마무리 멘트', compliance: 90 },
+  ];
+
+  return (
+    <div className="p-6 space-y-6">
+      {/* Summary KPIs */}
+      <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
+        {[
+          { label: '총 상담', value: `${totalConsultations}건`, color: 'text-[#1e293b]' },
+          { label: '완료', value: `${completedCount}건`, color: 'text-emerald-600' },
+          { label: '평균 통화시간', value: `${avgDuration}분`, color: 'text-blue-600' },
+          { label: '스크립트 준수율', value: `${scriptComplianceRate}%`, color: scriptComplianceRate >= 85 ? 'text-emerald-600' : 'text-amber-600' },
+          { label: '고객 만족도', value: `${customerSatisfaction}/5`, color: 'text-[#1e293b]' },
+          { label: '1차 콜 해결률', value: `${firstCallResolveRate}%`, color: 'text-blue-600' },
+        ].map((kpi, idx) => (
+          <div key={idx} className="bg-white p-4 rounded-lg border border-slate-200 shadow-sm text-center">
+            <div className="text-[10px] text-slate-400 font-medium uppercase">{kpi.label}</div>
+            <div className={clsx("text-xl font-bold mt-1", kpi.color)}>{kpi.value}</div>
+          </div>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Staff Quality Table */}
+        <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
+          <div className="px-4 py-3 border-b border-slate-200 bg-slate-50">
+            <h4 className="font-bold text-sm text-[#1e293b]">직원별 품질 지표</h4>
+          </div>
+          <table className="w-full text-xs">
+            <thead className="bg-slate-50 text-slate-500">
+              <tr>
+                <th className="px-4 py-2 text-left font-medium">담당자</th>
+                <th className="px-3 py-2 text-center font-medium">콜 수</th>
+                <th className="px-3 py-2 text-center font-medium">평균시간</th>
+                <th className="px-3 py-2 text-center font-medium">스크립트</th>
+                <th className="px-3 py-2 text-center font-medium">만족도</th>
+                <th className="px-3 py-2 text-center font-medium">인계율</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {qualityByStaff.map((staff, idx) => (
+                <tr key={idx} className="hover:bg-slate-50">
+                  <td className="px-4 py-2.5 font-bold text-[#1e293b]">{staff.name}</td>
+                  <td className="px-3 py-2.5 text-center">{staff.calls}</td>
+                  <td className="px-3 py-2.5 text-center">{staff.avgDuration}분</td>
+                  <td className="px-3 py-2.5 text-center">
+                    <span className={clsx("font-bold", staff.scriptCompliance >= 85 ? "text-emerald-600" : "text-amber-600")}>
+                      {staff.scriptCompliance}%
+                    </span>
+                  </td>
+                  <td className="px-3 py-2.5 text-center">{staff.satisfaction}</td>
+                  <td className="px-3 py-2.5 text-center font-bold">{staff.handoffRate}%</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Script Compliance Breakdown */}
+        <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
+          <div className="px-4 py-3 border-b border-slate-200 bg-slate-50">
+            <h4 className="font-bold text-sm text-[#1e293b]">스크립트 항목별 준수율</h4>
+          </div>
+          <div className="p-4 space-y-3">
+            {scriptCheckItems.map((item, idx) => (
+              <div key={idx} className="space-y-1">
+                <div className="flex justify-between text-xs">
+                  <span className="font-medium text-slate-600">{item.item}</span>
+                  <span className={clsx("font-bold", item.compliance >= 85 ? "text-emerald-600" : item.compliance >= 75 ? "text-amber-600" : "text-rose-600")}>
+                    {item.compliance}%
+                  </span>
+                </div>
+                <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                  <div
+                    className={clsx("h-full rounded-full transition-all", item.compliance >= 85 ? "bg-emerald-500" : item.compliance >= 75 ? "bg-amber-400" : "bg-rose-500")}
+                    style={{ width: `${item.compliance}%` }}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }

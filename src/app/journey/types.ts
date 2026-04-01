@@ -12,6 +12,125 @@ export type AssignmentSource = 'manual' | 'scheduled_auto' | 'urgent_auto';
 export type NotificationState = 'pending' | 'sent' | 'failed' | 'verified';
 export type ExcludeState = 'active' | 'excluded';
 
+// ─── 8-Phase Journey 모델 (Notion 업무 흐름도 기반) ───
+
+/** 8개 메인 페이즈 */
+export type JourneyPhase =
+  | 'inflow'          // Phase 1: 유입
+  | 'inquiry'         // Phase 2: 조회/신청
+  | 'classification'  // Phase 3: 선별/배정
+  | 'tm'              // Phase 4: 상담/TM
+  | 'meeting'         // Phase 5: 미팅/계약
+  | 'claims'          // Phase 6: 청구/분석
+  | 'payment'         // Phase 7: 지급/사후
+  | 'growth';         // Phase 8: Growth Loop
+
+/** 3년환급 세부 스텝 (S1-S17) */
+export type RefundStep =
+  | 'S1_inflow'                // 유입 (앱설치, 광고유입)
+  | 'S2_hira_lookup'           // 건강보험 조회
+  | 'S3_refund_apply'          // 환급 신청
+  | 'S4_screening'             // 선별/배정
+  | 'S5_first_tm'              // 1차 TM (초기상담)
+  | 'S6_second_tm'             // 2차 TM (심화상담)
+  | 'S7_pre_analysis'          // 사전분석
+  | 'S8_meeting_execution'     // 미팅 실행
+  | 'S9_contract_close'        // 계약 체결
+  | 'S10_claim_receipt'        // 청구 접수
+  | 'S11_unpaid_analysis'      // 미지급금 분석
+  | 'S12_doc_issuance'         // 서류 발급
+  | 'S13_final_analysis'       // 최종 분석/제출
+  | 'S14_payment_confirm'      // 지급 확인
+  | 'S15_aftercare'            // 사후관리/정산
+  | 'S16_referral_push'        // 소개 푸시
+  | 'S17_reentry';             // 재유입 유도
+
+/** 소개 세부 스텝 (R1-R14) — Notion 기준: 선별/TM 스킵, Same-owner 배정 */
+export type ReferralStep =
+  | 'R1_referral_inflow'       // 소개 유입 (추천코드/링크)
+  | 'R2_hira_lookup'           // 건강보험 조회
+  | 'R3_refund_apply'          // 환급 신청
+  | 'R4_pre_analysis'          // 사전분석 (Same-owner 자동배정, 선별/TM 스킵)
+  | 'R5_meeting_execution'     // 미팅 진행
+  | 'R6_contract_close'        // 계약 체결/서류 인계
+  | 'R7_claim_receipt'         // 청구 접수
+  | 'R8_unpaid_analysis'       // 미지급 분석
+  | 'R9_doc_issuance'          // 서류 발급표
+  | 'R10_final_analysis'       // 최종 분석
+  | 'R11_payment_confirm'      // 지급 확인
+  | 'R12_aftercare'            // 사후관리 및 정산
+  | 'R13_referral_create'      // 소개 생성/가족 연동
+  | 'R14_reentry';             // 소개 재유입/성장 루프
+
+/** 간편청구 세부 스텝 (Q1-Q9) — Notion 기준: 청구콜 중심, 보장공백탐지 포함 */
+export type SimpleClaimStep =
+  | 'Q1_intake_start'          // 접수 시작
+  | 'Q2_identity_verify'       // 초기 분기/본인확인
+  | 'Q3_first_claim_call'      // 1차 청구콜/서류 확보
+  | 'Q4_precision_analysis'    // 1차 정밀 분석 (교차대조)
+  | 'Q5_customer_confirm'      // 고객 안내/청구 확정
+  | 'Q6_insurer_submit'        // 보험사 접수
+  | 'Q7_payment_tracking'      // 지급 추적/결과 안내
+  | 'Q8_gap_detection'         // 보장 공백 탐지
+  | 'Q9_retention_growth';     // 리텐션/가족/소개 확장
+
+/** 모든 Journey Step의 유니온 */
+export type JourneyStep = RefundStep | ReferralStep | SimpleClaimStep;
+
+/** 팀 역할 */
+export type TeamRole =
+  | 'call_member'      // 상담팀원 (콜팀원)
+  | 'call_lead'        // 상담팀장
+  | 'sales_member'     // 영업팀원
+  | 'sales_lead'       // 영업팀장
+  | 'claims_member'    // 청구팀원
+  | 'claims_lead'      // 청구팀장
+  | 'cs'               // CS팀
+  | 'compliance'       // 준법감시팀
+  | 'admin';           // 인사/총무/관리자
+
+/** DB 분류 (프로세스 분기 기준) */
+export type DbCategoryV2 = 'possible' | 'compensation' | 'referral';
+
+/** 단계별 KPI 정의 */
+export interface StageKPI {
+  stepCode: JourneyStep;
+  name: string;
+  metric: string;
+  target: string;
+  unit: string;
+  team: TeamRole[];
+}
+
+/** 개인정보 수집 항목 */
+export type PersonalDataSensitivity = 1 | 2 | 3 | 4 | 5;
+
+export interface PersonalDataEntry {
+  fieldName: string;
+  description: string;
+  sensitivity: PersonalDataSensitivity;
+  collectedAt: JourneyStep[];
+  collectionMethod: 'app_input' | 'api_lookup' | 'document_scan' | 'manual_entry' | 'integration';
+  retentionDays: number;
+  legalBasis: string;
+}
+
+/** Phase ↔ Step 매핑 메타데이터 */
+export interface PhaseStepMeta {
+  phase: JourneyPhase;
+  step: JourneyStep;
+  label: string;
+  description: string;
+  primaryTeam: TeamRole;
+  supportTeams: TeamRole[];
+  kpis: StageKPI[];
+  personalData: PersonalDataEntry[];
+  /** 보상DB에서 이 스텝을 건너뛸 수 있는지 */
+  skippableForCompensation: boolean;
+  /** 간편청구에서 이 스텝이 적용되는지 */
+  applicableToSimple: boolean;
+}
+
 export interface RequirementAlert {
   id: string;
   label: string;
@@ -133,6 +252,12 @@ export interface ConsultationDraft {
   referralName: string;
   referralRelationship: string;
   referralBenefitExplained: boolean;
+  healthChecklist?: {
+    noRecentTreatment: boolean;
+    noRecentInjury: boolean;
+    noMedChange: boolean;
+    criticalCured5yr: boolean;
+  };
 }
 
 export interface MeetingContractSnapshot {
@@ -339,6 +464,11 @@ export interface RequestJourney {
   notificationState?: NotificationState;
   consultationDraft: ConsultationDraft;
   meetingDraft: MeetingDraft;
+  // ─── 8-Phase 확장 필드 ───
+  phase: JourneyPhase;
+  step: JourneyStep;
+  dbCategoryV2: DbCategoryV2;
+  stepHistory: { step: JourneyStep; enteredAt: string; exitedAt?: string }[];
 }
 
 export interface JourneyComputation {

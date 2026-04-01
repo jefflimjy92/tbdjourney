@@ -1,15 +1,18 @@
 import React, { createContext, useCallback, useContext, useMemo, useState } from 'react';
 import { createInitialJourneys } from '@/app/journey/mockJourneys';
-import { computeJourney } from '@/app/journey/rules';
+import { computeJourney, canAdvanceStep, shouldSkipStep, getPhaseTransitionMessage } from '@/app/journey/rules';
 import type {
   AuditEvent,
   ConsultationDraft,
+  DbCategoryV2,
   IntegrationTask,
+  JourneyStep,
   MeetingDraft,
   RequestJourney,
   StageStatus,
   VerificationState,
 } from '@/app/journey/types';
+import { STEP_TO_PHASE } from '@/app/journey/phaseConfig';
 
 interface JourneyContextValue {
   journeys: Record<string, RequestJourney>;
@@ -23,6 +26,9 @@ interface JourneyContextValue {
   updateDocumentRequirement: (requestId: string, docCode: string, verificationState: VerificationState, actor?: string) => void;
   updateIntegrationTask: (requestId: string, taskCode: string, patch: Partial<IntegrationTask>, actor?: string) => void;
   appendAudit: (requestId: string, event: AuditEvent) => void;
+  advanceStep: (requestId: string, actor?: string) => { success: boolean; reason?: string };
+  setDbCategory: (requestId: string, category: DbCategoryV2, actor?: string) => void;
+  goToStep: (requestId: string, step: JourneyStep, actor?: string) => void;
 }
 
 const JourneyContext = createContext<JourneyContextValue | null>(null);
@@ -169,6 +175,53 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
     }));
   }, [patchJourney]);
 
+  const advanceStep = useCallback((requestId: string, actor = '시스템') => {
+    const journey = journeys[requestId];
+    if (!journey) return { success: false, reason: 'Journey를 찾을 수 없습니다.' };
+
+    const result = canAdvanceStep(journey);
+    if (!result.allowed || !result.nextStep) {
+      return { success: false, reason: result.reason };
+    }
+
+    const nextStep = result.nextStep;
+    // 보상DB 스텝 스킵 처리는 getNextStep에서 이미 반영됨
+    const message = getPhaseTransitionMessage(journey.step, nextStep);
+
+    patchJourney(requestId, (j) => ({
+      ...j,
+      step: nextStep,
+      phase: STEP_TO_PHASE[nextStep],
+      stepHistory: [
+        ...j.stepHistory,
+        { step: j.step, enteredAt: j.stepHistory[j.stepHistory.length - 1]?.enteredAt || '', exitedAt: new Date().toISOString().slice(0, 16).replace('T', ' ') },
+      ],
+      auditTrail: [buildAudit('status_changed', actor, message, 'success'), ...j.auditTrail].slice(0, 20),
+    }));
+    return { success: true };
+  }, [journeys, patchJourney]);
+
+  const setDbCategory = useCallback((requestId: string, category: DbCategoryV2, actor = '배정팀') => {
+    patchJourney(requestId, (journey) => ({
+      ...journey,
+      dbCategoryV2: category,
+      auditTrail: [buildAudit('status_changed', actor, `DB 분류를 '${category}'로 변경했습니다.`), ...journey.auditTrail].slice(0, 20),
+    }));
+  }, [patchJourney]);
+
+  const goToStep = useCallback((requestId: string, step: JourneyStep, actor = '시스템') => {
+    patchJourney(requestId, (journey) => ({
+      ...journey,
+      step,
+      phase: STEP_TO_PHASE[step],
+      stepHistory: [
+        ...journey.stepHistory,
+        { step: journey.step, enteredAt: journey.stepHistory[journey.stepHistory.length - 1]?.enteredAt || '', exitedAt: new Date().toISOString().slice(0, 16).replace('T', ' ') },
+      ],
+      auditTrail: [buildAudit('status_changed', actor, `스텝을 '${step}'으로 이동했습니다.`), ...journey.auditTrail].slice(0, 20),
+    }));
+  }, [patchJourney]);
+
   const value = useMemo(() => ({
     journeys,
     getJourney,
@@ -181,7 +234,10 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
     updateDocumentRequirement,
     updateIntegrationTask,
     appendAudit,
-  }), [journeys, getJourney, ensureJourney, saveConsultationDraft, applyConsultationStatus, saveMeetingDraft, assignMeetingStaff, applyMeetingStatus, updateDocumentRequirement, updateIntegrationTask, appendAudit]);
+    advanceStep,
+    setDbCategory,
+    goToStep,
+  }), [journeys, getJourney, ensureJourney, saveConsultationDraft, applyConsultationStatus, saveMeetingDraft, assignMeetingStaff, applyMeetingStatus, updateDocumentRequirement, updateIntegrationTask, appendAudit, advanceStep, setDbCategory, goToStep]);
 
   return <JourneyContext.Provider value={value}>{children}</JourneyContext.Provider>;
 }
