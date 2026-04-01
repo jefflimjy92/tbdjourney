@@ -1298,13 +1298,15 @@ const EXECUTION_QUEUE = MOCK_DATA.meetingExecutionQueue;
 
 // --- Main Component ---
 
-interface MeetingExecutionProps {
+export interface MeetingExecutionProps {
   onNavigate: (tab: string) => void;
   type?: 'refund' | 'simple';
   initialRequestId?: string | null;
+  /** 미팅 단계 필터: 'pre_analysis' | 'on_site' | 'contract_close' */
+  meetingStageFilter?: 'pre_analysis' | 'on_site' | 'contract_close';
 }
 
-export function MeetingExecution({ onNavigate, type, initialRequestId }: MeetingExecutionProps) {
+export function MeetingExecution({ onNavigate, type, initialRequestId, meetingStageFilter }: MeetingExecutionProps) {
   const [selectedItem, setSelectedItem] = useState<any>(null);
   const [selectedStaffOwner, setSelectedStaffOwner] = useState<string | null>(null);
   const defaultCustomPeriodRange = useMemo(() => getDefaultCustomPeriodRange(), []);

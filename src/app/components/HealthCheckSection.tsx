@@ -97,18 +97,61 @@ export function HealthCheckSection(props: HealthCheckSectionProps) {
     }
   };
 
+  // D-3: Structured checklist completion status
+  const checklistItems = [
+    { label: '교통사고', filled: trafficAccident !== '', hasIssue: trafficAccident === '있음' },
+    { label: '수술/시술', filled: surgery !== '', hasIssue: surgery === '있음' },
+    { label: '중대질환', filled: criticalDisease !== '', hasIssue: criticalDisease === '있음' },
+    { label: '투약이력', filled: medication !== '', hasIssue: medication === '있음' },
+  ];
+  const filledCount = checklistItems.filter(c => c.filled).length;
+  const issueCount = checklistItems.filter(c => c.hasIssue).length;
+  const isComplete = filledCount === checklistItems.length;
+
   return (
     <div className="bg-[#f8fafc] border border-[#e2e8f0] rounded p-2.5 relative">
       {/* Header */}
       <div className="border-b border-[#e2e8f0] pb-2 mb-3">
         <div className="flex items-center justify-between gap-2">
           <p className="text-xs font-bold text-[#314158]">병력 / 건강 확인</p>
-          {hiraPreFill && (
-            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-teal-50 text-teal-700 border border-teal-200">
-              심평원 참고
+          <div className="flex items-center gap-2">
+            {hiraPreFill && (
+              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-teal-50 text-teal-700 border border-teal-200">
+                심평원 참고
+              </span>
+            )}
+            <span className={clsx(
+              "inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold border",
+              isComplete ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-amber-50 text-amber-700 border-amber-200"
+            )}>
+              {filledCount}/{checklistItems.length} 완료
             </span>
-          )}
+          </div>
         </div>
+      </div>
+
+      {/* Checklist Summary Bar */}
+      <div className="mb-3 flex items-center gap-2 flex-wrap">
+        {checklistItems.map((item, idx) => (
+          <span
+            key={idx}
+            className={clsx(
+              "inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold border",
+              !item.filled ? "bg-slate-50 text-slate-400 border-slate-200" :
+              item.hasIssue ? "bg-rose-50 text-rose-600 border-rose-200" :
+              "bg-emerald-50 text-emerald-600 border-emerald-200"
+            )}
+          >
+            <span className={clsx("size-1.5 rounded-full", !item.filled ? "bg-slate-300" : item.hasIssue ? "bg-rose-500" : "bg-emerald-500")} />
+            {item.label}
+            {item.hasIssue && ' (있음)'}
+          </span>
+        ))}
+        {issueCount > 0 && (
+          <span className="text-[10px] text-rose-500 font-bold ml-1">
+            {issueCount}건 확인 필요
+          </span>
+        )}
       </div>
 
       {hiraPreFill?.hasLongHospitalization && (

@@ -585,13 +585,15 @@ const INSURANCE_MOCK_DATA = {
    ]
 };
 
-interface ClaimsProps {
+export interface ClaimsProps {
   type?: 'refund' | 'simple';
   initialRequestId?: string | null;
   onNavigate?: (path: string) => void;
+  /** 청구 단계 필터 */
+  claimsStageFilter?: 'receipt' | 'unpaid_analysis' | 'doc_issuance' | 'final_analysis';
 }
 
-export function Claims({ type, initialRequestId, onNavigate }: ClaimsProps) {
+export function Claims({ type, initialRequestId, onNavigate, claimsStageFilter }: ClaimsProps) {
   const [view, setView] = useState<'list' | 'detail'>('list');
   const [selectedItem, setSelectedItem] = useState<any>(null);
   const [selectedStaffOwner, setSelectedStaffOwner] = useState<string | null>(null);
@@ -649,6 +651,31 @@ function ClaimList({
   const [customPeriodStartDate, setCustomPeriodStartDate] = useState(defaultCustomPeriodRange.startDate);
   const [customPeriodEndDate, setCustomPeriodEndDate] = useState(defaultCustomPeriodRange.endDate);
   const [activeTab, setActiveTab] = useState<'list' | 'staff'>('list');
+  const [selectedClaimIds, setSelectedClaimIds] = useState<Set<string>>(new Set());
+  const [showClaimAssignModal, setShowClaimAssignModal] = useState(false);
+  const [claimAssignee, setClaimAssignee] = useState('');
+
+  const CLAIMS_ASSIGNEES = [
+    { name: '강청구', currentCount: 18 },
+    { name: '윤청구', currentCount: 22 },
+    { name: '한청구', currentCount: 15 },
+    { name: '서청구', currentCount: 25 },
+  ];
+
+  const toggleClaimSelect = (id: string) => {
+    setSelectedClaimIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const handleClaimBatchAssign = () => {
+    if (!claimAssignee) return;
+    setShowClaimAssignModal(false);
+    setSelectedClaimIds(new Set());
+    setClaimAssignee('');
+  };
 
   const customerMetaMap = useMemo(
     () =>
@@ -750,6 +777,14 @@ function ClaimList({
            <div className="flex items-center gap-2 px-3 py-2 bg-white border border-slate-300 rounded text-sm text-slate-600 hover:bg-slate-50 cursor-pointer shadow-sm">
             <Filter size={16} /> 필터
           </div>
+          {selectedClaimIds.size > 0 && (
+            <button
+              onClick={() => setShowClaimAssignModal(true)}
+              className="flex items-center gap-2 px-3 py-2 bg-blue-600 text-white rounded text-sm font-medium hover:bg-blue-700 shadow-sm"
+            >
+              <User size={16} /> 팀원 배정 ({selectedClaimIds.size}건)
+            </button>
+          )}
         </div>
       </div>
 
@@ -794,6 +829,17 @@ function ClaimList({
            <table className="w-full text-sm text-left">
              <thead className="text-xs text-slate-500 uppercase bg-slate-50 border-b border-slate-200 sticky top-0">
                <tr>
+                 <th className="px-3 py-3 w-10">
+                   <input
+                     type="checkbox"
+                     checked={selectedClaimIds.size === displayData.length && displayData.length > 0}
+                     onChange={() => {
+                       if (selectedClaimIds.size === displayData.length) setSelectedClaimIds(new Set());
+                       else setSelectedClaimIds(new Set(displayData.map(d => d.id)));
+                     }}
+                     className="rounded border-slate-300"
+                   />
+                 </th>
                  <th className="px-6 py-3 font-medium">청구 ID</th>
                  <th className="px-6 py-3 font-medium">고객명</th>
                  <th className="px-6 py-3 font-medium">유형</th>
@@ -805,11 +851,19 @@ function ClaimList({
              </thead>
              <tbody className="divide-y divide-slate-100">
                {displayData.map((item) => (
-                 <tr 
-                   key={item.id} 
-                   className="hover:bg-slate-50 transition-colors cursor-pointer group"
+                 <tr
+                   key={item.id}
+                   className={clsx("hover:bg-slate-50 transition-colors cursor-pointer group", selectedClaimIds.has(item.id) && "bg-blue-50/50")}
                    onClick={() => onSelect(item)}
                  >
+                   <td className="px-3 py-4" onClick={e => e.stopPropagation()}>
+                     <input
+                       type="checkbox"
+                       checked={selectedClaimIds.has(item.id)}
+                       onChange={() => toggleClaimSelect(item.id)}
+                       className="rounded border-slate-300"
+                     />
+                   </td>
                    <td className="px-6 py-4 font-mono text-xs font-bold text-slate-600">{item.id}</td>
                    <td className="px-6 py-4 font-bold text-[#1e293b]">{item.customer}</td>
                    <td className="px-6 py-4">
@@ -971,6 +1025,60 @@ function ClaimStaffDetailPage({
           onSelectItem={onSelect}
         />
       </div>
+
+      {/* Claims Batch Assignment Modal */}
+      {showClaimAssignModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-slate-900/30 backdrop-blur-sm" onClick={() => setShowClaimAssignModal(false)} />
+          <div className="relative bg-white rounded-xl shadow-2xl border border-slate-200 w-full max-w-md p-6">
+            <div className="flex justify-between items-start mb-4">
+              <div>
+                <h3 className="font-bold text-[#1e293b]">청구DB 팀원 배정</h3>
+                <p className="text-xs text-slate-500 mt-1">{selectedClaimIds.size}건 선택됨</p>
+              </div>
+              <button onClick={() => setShowClaimAssignModal(false)} className="text-slate-400 hover:text-slate-600">✕</button>
+            </div>
+            <div className="space-y-3">
+              <label className="block text-xs font-bold text-slate-600">청구 담당자 선택</label>
+              <select
+                value={claimAssignee}
+                onChange={e => setClaimAssignee(e.target.value)}
+                className="w-full px-3 py-2 border border-slate-300 rounded text-sm focus:ring-2 focus:ring-blue-200 focus:border-blue-400"
+              >
+                <option value="">담당자를 선택하세요</option>
+                {CLAIMS_ASSIGNEES.map(a => (
+                  <option key={a.name} value={a.name}>
+                    {a.name} (현재 {a.currentCount}건)
+                  </option>
+                ))}
+              </select>
+              {claimAssignee && (() => {
+                const assignee = CLAIMS_ASSIGNEES.find(a => a.name === claimAssignee);
+                const newTotal = (assignee?.currentCount || 0) + selectedClaimIds.size;
+                return (
+                  <div className={clsx(
+                    "px-3 py-2 rounded text-xs border",
+                    newTotal > 30 ? "bg-rose-50 border-rose-200 text-rose-700" : "bg-slate-50 border-slate-200 text-slate-600"
+                  )}>
+                    <span className="font-bold">{claimAssignee}</span>: 현재 {assignee?.currentCount}건 + {selectedClaimIds.size}건 = <span className="font-bold">{newTotal}건</span>
+                    {newTotal > 30 && <span className="ml-2 font-bold text-rose-600">상한 초과!</span>}
+                  </div>
+                );
+              })()}
+            </div>
+            <div className="flex justify-end gap-2 mt-6">
+              <button onClick={() => setShowClaimAssignModal(false)} className="px-4 py-2 text-sm text-slate-600 border border-slate-300 rounded hover:bg-slate-50">취소</button>
+              <button
+                onClick={handleClaimBatchAssign}
+                disabled={!claimAssignee}
+                className="px-4 py-2 text-sm text-white bg-[#1e293b] rounded hover:bg-slate-800 disabled:opacity-40"
+              >
+                배정 확인
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

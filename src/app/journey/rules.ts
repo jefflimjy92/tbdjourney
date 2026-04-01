@@ -8,13 +8,25 @@ import type {
   DocumentPackCode,
   IntegrationTask,
   JourneyComputation,
+  JourneyPhase,
+  JourneyStep,
   MeetingDraft,
   MeetingStepNumber,
   RequirementAlert,
   RequirementRule,
   RequestJourney,
+  DbCategoryV2,
+  TeamRole,
   VerificationState,
 } from '@/app/journey/types';
+import {
+  STEP_TO_PHASE,
+  getNextStep,
+  getStepSequence,
+  getStepLabel,
+  COMPENSATION_SKIP_STEPS,
+  isStepVisibleToRole,
+} from './phaseConfig';
 
 export const DOCUMENT_PACK_LABELS: Record<DocumentPackCode, string> = {
   base_consent_pack: '기본 동의 Pack',
@@ -469,4 +481,165 @@ export function computeJourney(journey: RequestJourney): JourneyComputation {
     missingRequirements: unique,
     nextAction: block ? block.message : journey.nextAction,
   };
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 8-Phase Step Transition Rules
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+export interface StepTransitionResult {
+  allowed: boolean;
+  reason?: string;
+  nextStep: JourneyStep | null;
+}
+
+/** 스텝 전환 가능 여부 검증 */
+export function canAdvanceStep(journey: RequestJourney): StepTransitionResult {
+  const { step, dbCategoryV2 } = journey;
+  const journeyType = journey.journeyType === 'family' ? 'refund' : journey.journeyType as 'refund' | 'intro' | 'simple';
+  const next = getNextStep(step, journeyType, dbCategoryV2);
+
+  if (!next) {
+    return { allowed: false, reason: '마지막 단계입니다.', nextStep: null };
+  }
+
+  // 블로킹 요건 확인
+  const computation = computeJourney(journey);
+  const blocks = computation.missingRequirements.filter(a => a.severity === 'block');
+  if (blocks.length > 0) {
+    return {
+      allowed: false,
+      reason: `미완료 필수 항목 ${blocks.length}개: ${blocks[0].message}`,
+      nextStep: next,
+    };
+  }
+
+  return { allowed: true, nextStep: next };
+}
+
+/** DB유형별 스텝 스킵 여부 */
+export function shouldSkipStep(step: JourneyStep, dbCategory: DbCategoryV2): boolean {
+  if (dbCategory === 'compensation') {
+    return (COMPENSATION_SKIP_STEPS as readonly JourneyStep[]).includes(step);
+  }
+  return false;
+}
+
+/** 보상DB 전용 규칙: 주말 미팅 허용 */
+export function isWeekendMeetingAllowed(dbCategory: DbCategoryV2): boolean {
+  return dbCategory === 'compensation';
+}
+
+/** 보상DB 전용 규칙: 보험가입 제안 비활성화 */
+export function isInsuranceSalesDisabled(dbCategory: DbCategoryV2): boolean {
+  return dbCategory === 'compensation';
+}
+
+/** 소개DB 전용 규칙: same-owner 유지 확인 */
+export function requiresSameOwner(dbCategory: DbCategoryV2): boolean {
+  return dbCategory === 'referral';
+}
+
+/** Same-owner 배정 검증: 소개건에서 원래 담당자와 다른 사람에게 배정 시 경고 */
+export function validateSameOwnerAssignment(
+  dbCategory: DbCategoryV2,
+  originalOwnerId: string | null,
+  newOwnerId: string,
+): { valid: boolean; warning?: string } {
+  if (!requiresSameOwner(dbCategory)) return { valid: true };
+  if (!originalOwnerId) return { valid: true }; // 최초 배정
+  if (originalOwnerId === newOwnerId) return { valid: true };
+  return {
+    valid: false,
+    warning: `소개 고객은 원래 담당자(${originalOwnerId})에게 배정되어야 합니다. Same-owner 규칙 위반.`,
+  };
+}
+
+/** 중대질환(암/뇌/심장) 자동 감지 — 키워드 기반 */
+const CRITICAL_KEYWORDS = ['암', '뇌', '심장', '뇌출혈', '뇌경색', '심근경색', '악성종양', 'cancer', 'brain', 'heart'];
+
+export function detectCriticalCondition(
+  diagnosisText: string,
+): { isCritical: boolean; matchedKeywords: string[] } {
+  const lower = diagnosisText.toLowerCase();
+  const matched = CRITICAL_KEYWORDS.filter(kw => lower.includes(kw.toLowerCase()));
+  return { isCritical: matched.length > 0, matchedKeywords: matched };
+}
+
+/** 역할 기반 스텝 필터링 */
+export function getVisibleStepsForRole(
+  journeyType: 'refund' | 'intro' | 'simple',
+  role: TeamRole,
+  dbCategory?: DbCategoryV2,
+): JourneyStep[] {
+  const allSteps = getStepSequence(journeyType, dbCategory);
+  return allSteps.filter(step => isStepVisibleToRole(step, role));
+}
+
+// ── Cut-rule 엔진 ──────────────────────────────────────────────
+export interface CutRuleResult {
+  shouldCut: boolean;
+  reason: string | null;
+  rule: string | null;
+}
+
+const CUT_RULES: { check: (ctx: CutRuleContext) => boolean; reason: string; rule: string }[] = [
+  { check: (c) => c.contactAttempts >= 5, reason: '부재 5회 이상', rule: 'absent_5' },
+  { check: (c) => c.explicitRefusal, reason: '고객 명시 거절', rule: 'explicit_refusal' },
+  { check: (c) => c.isCritical, reason: '중대질환(암/뇌/심) 진행불가', rule: 'critical_disease' },
+  { check: (c) => c.daysSinceLastContact >= 14, reason: '14일 무응답', rule: 'no_response_14d' },
+];
+
+interface CutRuleContext {
+  contactAttempts: number;
+  explicitRefusal: boolean;
+  isCritical: boolean;
+  daysSinceLastContact: number;
+}
+
+export function evaluateCutRules(ctx: CutRuleContext): CutRuleResult {
+  for (const rule of CUT_RULES) {
+    if (rule.check(ctx)) {
+      return { shouldCut: true, reason: rule.reason, rule: rule.rule };
+    }
+  }
+  return { shouldCut: false, reason: null, rule: null };
+}
+
+// ── DB 자동분류 엔진 ──────────────────────────────────────────
+export function autoClassifyDb(params: {
+  hasPreExistingCondition: boolean;
+  referralCode: string | null;
+}): DbCategoryV2 {
+  if (params.referralCode) return 'referral';
+  if (params.hasPreExistingCondition) return 'compensation';
+  return 'possible';
+}
+
+// ── Same-owner 자동배정 ──────────────────────────────────────
+export function resolveSameOwnerAssignment(
+  referrerId: string | null,
+  ownerMap: Record<string, string>,
+): { assignedOwner: string | null; method: 'same_owner' | 'manual' } {
+  if (!referrerId) return { assignedOwner: null, method: 'manual' };
+  const owner = ownerMap[referrerId];
+  return owner
+    ? { assignedOwner: owner, method: 'same_owner' }
+    : { assignedOwner: null, method: 'manual' };
+}
+
+/** Phase 전환 시 audit 메시지 생성 */
+export function getPhaseTransitionMessage(
+  fromStep: JourneyStep,
+  toStep: JourneyStep,
+): string {
+  const fromPhase = STEP_TO_PHASE[fromStep];
+  const toPhase = STEP_TO_PHASE[toStep];
+  const fromLabel = getStepLabel(fromStep);
+  const toLabel = getStepLabel(toStep);
+
+  if (fromPhase !== toPhase) {
+    return `페이즈 전환: ${fromLabel} → ${toLabel}`;
+  }
+  return `스텝 진행: ${fromLabel} → ${toLabel}`;
 }

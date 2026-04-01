@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
-import { 
-  Calendar, 
-  ChevronLeft, 
-  ChevronRight, 
-  Download, 
-  Users, 
-  Phone, 
+import {
+  Calendar,
+  ChevronLeft,
+  ChevronRight,
+  Download,
+  Users,
+  Phone,
   ArrowRightLeft,
   XCircle,
   Clock,
@@ -14,9 +14,16 @@ import {
   BarChart3,
   Send,
   AlertCircle,
+  AlertTriangle,
   PhoneOff,
   UserCheck,
-  Briefcase
+  Briefcase,
+  FileWarning,
+  ClipboardCheck,
+  Star,
+  Building2,
+  MessageSquare,
+  CheckCircle,
 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -91,7 +98,7 @@ const MANAGING_CUSTOMERS = [
 export function DailyReport() {
   const [reportDate, setReportDate] = useState(TODAY);
   const [reportType, setReportType] = useState<'mid' | 'final'>('final');
-  const [activeSection, setActiveSection] = useState<'overview' | 'handoff' | 'cancel' | 'absent' | 'manage'>('overview');
+  const [activeSection, setActiveSection] = useState<'overview' | 'handoff' | 'cancel' | 'absent' | 'manage' | 'script_feedback' | 'probation' | 'tier' | 'sales_report' | 'quality'>('overview');
 
   // KPI Summary
   const totalAllocated = TEAM_MEMBERS.reduce((sum, m) => sum + m.allocated, 0);
@@ -116,6 +123,11 @@ export function DailyReport() {
     { id: 'cancel' as const, label: `취소 분석 (${totalCancel})`, icon: XCircle },
     { id: 'absent' as const, label: `부재 관리 (${ABSENT_STATUS.length})`, icon: PhoneOff },
     { id: 'manage' as const, label: `관리 고객 (${MANAGING_CUSTOMERS.length})`, icon: UserCheck },
+    { id: 'script_feedback' as const, label: '스크립트 피드백', icon: FileWarning },
+    { id: 'probation' as const, label: '수습 평가', icon: ClipboardCheck },
+    { id: 'tier' as const, label: '티어 관리', icon: Star },
+    { id: 'sales_report' as const, label: '영업팀 마감', icon: Building2 },
+    { id: 'quality' as const, label: '품질 피드백', icon: MessageSquare },
   ];
 
   return (
@@ -225,6 +237,11 @@ export function DailyReport() {
         {activeSection === 'cancel' && <CancelSection data={CANCEL_REASONS} />}
         {activeSection === 'absent' && <AbsentSection data={ABSENT_STATUS} />}
         {activeSection === 'manage' && <ManageSection data={MANAGING_CUSTOMERS} />}
+        {activeSection === 'script_feedback' && <ScriptFeedbackSection />}
+        {activeSection === 'probation' && <ProbationSection />}
+        {activeSection === 'tier' && <TierManagementSection />}
+        {activeSection === 'sales_report' && <SalesReportSection />}
+        {activeSection === 'quality' && <QualityFeedbackSection />}
       </div>
     </div>
   );
@@ -485,7 +502,69 @@ function CancelSection({ data }: { data: typeof CANCEL_REASONS }) {
 }
 
 function AbsentSection({ data }: { data: typeof ABSENT_STATUS }) {
+  const [warnThreshold, setWarnThreshold] = useState(3);
+  const [escalateThreshold, setEscalateThreshold] = useState(5);
+
+  const warnCount = data.filter(d => d.absentCount >= warnThreshold && d.absentCount < escalateThreshold).length;
+  const escalateCount = data.filter(d => d.absentCount >= escalateThreshold).length;
+
   return (
+    <div className="space-y-4">
+      {/* Threshold Config */}
+      <div className="bg-white border border-slate-200 rounded-lg shadow-sm p-4">
+        <div className="flex items-center justify-between mb-3">
+          <h4 className="font-bold text-sm text-[#1e293b]">부재 임계값 설정</h4>
+          <div className="flex gap-3 text-xs">
+            <span className="px-2 py-1 bg-amber-50 text-amber-600 rounded border border-amber-200 font-bold">
+              주의: {warnCount}건
+            </span>
+            <span className="px-2 py-1 bg-rose-50 text-rose-600 rounded border border-rose-200 font-bold">
+              에스컬레이션: {escalateCount}건
+            </span>
+          </div>
+        </div>
+        <div className="flex gap-6">
+          <label className="flex items-center gap-2 text-xs">
+            <span className="text-slate-500 font-medium">주의 임계값:</span>
+            <select
+              value={warnThreshold}
+              onChange={e => setWarnThreshold(Number(e.target.value))}
+              className="px-2 py-1 border border-slate-300 rounded text-xs font-bold"
+            >
+              {[2, 3, 4, 5].map(n => <option key={n} value={n}>{n}회</option>)}
+            </select>
+          </label>
+          <label className="flex items-center gap-2 text-xs">
+            <span className="text-slate-500 font-medium">에스컬레이션 임계값:</span>
+            <select
+              value={escalateThreshold}
+              onChange={e => setEscalateThreshold(Number(e.target.value))}
+              className="px-2 py-1 border border-slate-300 rounded text-xs font-bold"
+            >
+              {[3, 4, 5, 6, 7].map(n => <option key={n} value={n}>{n}회</option>)}
+            </select>
+          </label>
+          <div className="text-[10px] text-slate-400 flex items-center gap-1">
+            <AlertTriangle size={10} />
+            에스컬레이션 도달 시 팀리드에게 자동 알림
+          </div>
+        </div>
+      </div>
+
+      {/* Escalation Alerts */}
+      {escalateCount > 0 && (
+        <div className="bg-rose-50 border border-rose-200 rounded-lg p-3 flex items-start gap-2">
+          <AlertTriangle size={16} className="text-rose-500 mt-0.5 shrink-0" />
+          <div className="text-xs">
+            <span className="font-bold text-rose-700">에스컬레이션 알림:</span>{' '}
+            <span className="text-rose-600">
+              {data.filter(d => d.absentCount >= escalateThreshold).map(d => `${d.customer}(${d.absentCount}회)`).join(', ')}
+              — 팀리드 확인 필요
+            </span>
+          </div>
+        </div>
+      )}
+
     <div className="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden">
       <div className="px-6 py-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
         <div>
@@ -519,8 +598,8 @@ function AbsentSection({ data }: { data: typeof ABSENT_STATUS }) {
               <td className="px-4 py-3 text-center">
                 <span className={clsx(
                   "font-bold text-xs px-2 py-0.5 rounded",
-                  item.absentCount >= 5 ? "bg-rose-50 text-rose-600" :
-                  item.absentCount >= 3 ? "bg-amber-50 text-amber-600" :
+                  item.absentCount >= escalateThreshold ? "bg-rose-50 text-rose-600" :
+                  item.absentCount >= warnThreshold ? "bg-amber-50 text-amber-600" :
                   "bg-slate-50 text-slate-600"
                 )}>
                   {item.absentCount}회
@@ -551,6 +630,7 @@ function AbsentSection({ data }: { data: typeof ABSENT_STATUS }) {
           ))}
         </tbody>
       </table>
+    </div>
     </div>
   );
 }
@@ -591,6 +671,273 @@ function ManageSection({ data }: { data: typeof MANAGING_CUSTOMERS }) {
           ))}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+// ── Sprint 3: 일일업무 5건 ──
+
+function ScriptFeedbackSection() {
+  const FEEDBACKS = [
+    { id: 'SF-01', staff: '김상담', date: '2026-03-31 14:20', violation: '수수료 미안내', severity: 'critical' as const, script: 'S5 1차TM #8', action: '즉시 재교육', resolved: false },
+    { id: 'SF-02', staff: '최주원', date: '2026-03-31 11:40', violation: '개인정보 동의 누락', severity: 'critical' as const, script: 'S5 1차TM #9', action: '시말서 + 재교육', resolved: false },
+    { id: 'SF-03', staff: '이원이', date: '2026-03-31 16:05', violation: '예상환급액 과장 안내', severity: 'warning' as const, script: 'S5 1차TM #5', action: '구두 주의', resolved: true },
+    { id: 'SF-04', staff: '박하준', date: '2026-03-30 10:30', violation: '타사 비교 부적절 표현', severity: 'warning' as const, script: 'S6 2차TM #3', action: '구두 주의', resolved: true },
+  ];
+  const SEV = {
+    critical: { label: '중대', bg: 'bg-rose-50', text: 'text-rose-700', border: 'border-rose-200' },
+    warning: { label: '경고', bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-200' },
+  };
+
+  return (
+    <div className="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden">
+      <div className="px-6 py-4 border-b border-slate-200 bg-slate-50">
+        <h3 className="font-bold text-[#1e293b] text-sm flex items-center gap-2"><FileWarning size={16} className="text-rose-500" /> 스크립트 기준위반 피드백</h3>
+        <p className="text-xs text-slate-500 mt-0.5">금일 감지된 스크립트 위반 사항 및 조치 현황</p>
+      </div>
+      <div className="p-4 space-y-2">
+        <div className="grid grid-cols-3 gap-2 mb-3">
+          <div className="bg-rose-50 rounded-lg p-3 text-center">
+            <p className="text-[10px] text-rose-600">중대 위반</p>
+            <p className="text-xl font-bold text-rose-700">{FEEDBACKS.filter(f => f.severity === 'critical').length}</p>
+          </div>
+          <div className="bg-amber-50 rounded-lg p-3 text-center">
+            <p className="text-[10px] text-amber-600">경고</p>
+            <p className="text-xl font-bold text-amber-700">{FEEDBACKS.filter(f => f.severity === 'warning').length}</p>
+          </div>
+          <div className="bg-emerald-50 rounded-lg p-3 text-center">
+            <p className="text-[10px] text-emerald-600">조치 완료</p>
+            <p className="text-xl font-bold text-emerald-700">{FEEDBACKS.filter(f => f.resolved).length}/{FEEDBACKS.length}</p>
+          </div>
+        </div>
+        {FEEDBACKS.map(fb => {
+          const sev = SEV[fb.severity];
+          return (
+            <div key={fb.id} className={clsx('rounded-lg border p-3 space-y-1.5', sev.border, fb.resolved ? 'opacity-60' : '')}>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-slate-700">{fb.staff}</span>
+                  <span className={clsx('px-1.5 py-0.5 rounded text-[10px] font-bold', sev.bg, sev.text)}>{sev.label}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] text-slate-400">{fb.date}</span>
+                  {fb.resolved
+                    ? <span className="text-[10px] text-emerald-600 font-bold flex items-center gap-0.5"><CheckCircle size={10} /> 완료</span>
+                    : <button className="px-2 py-0.5 text-[10px] font-bold bg-slate-800 text-white rounded hover:bg-slate-700">조치</button>}
+                </div>
+              </div>
+              <p className="text-xs text-slate-700"><span className="font-medium">위반:</span> {fb.violation}</p>
+              <div className="flex items-center gap-4 text-[10px] text-slate-500">
+                <span>스크립트: {fb.script}</span>
+                <span>조치: <span className="font-medium text-slate-700">{fb.action}</span></span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function ProbationSection() {
+  const TRAINEES = [
+    { name: '최주원', startDate: '2026-02-15', endDate: '2026-05-15', daysLeft: 45, scores: { call: 65, script: 58, manner: 72, knowledge: 60 }, overall: 64, mentor: '김상담' },
+    { name: '신입사', startDate: '2026-03-01', endDate: '2026-06-01', daysLeft: 62, scores: { call: 55, script: 50, manner: 68, knowledge: 52 }, overall: 56, mentor: '이원이' },
+  ];
+
+  return (
+    <div className="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden">
+      <div className="px-6 py-4 border-b border-slate-200 bg-slate-50">
+        <h3 className="font-bold text-[#1e293b] text-sm flex items-center gap-2"><ClipboardCheck size={16} className="text-amber-500" /> 수습 평가표 관리</h3>
+        <p className="text-xs text-slate-500 mt-0.5">수습 직원 역량 평가 및 진행 현황</p>
+      </div>
+      <div className="p-4 space-y-4">
+        {TRAINEES.map(t => (
+          <div key={t.name} className="rounded-lg border border-slate-200 p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-bold text-slate-800">{t.name}</span>
+                <span className="text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded font-bold">수습</span>
+              </div>
+              <div className="text-[10px] text-slate-500">{t.startDate} ~ {t.endDate} (잔여 {t.daysLeft}일) · 멘토: {t.mentor}</div>
+            </div>
+            <div className="grid grid-cols-4 gap-2">
+              {([['콜 역량', t.scores.call], ['스크립트', t.scores.script], ['응대 태도', t.scores.manner], ['상품 지식', t.scores.knowledge]] as const).map(([label, score]) => (
+                <div key={label} className="text-center">
+                  <p className="text-[10px] text-slate-500">{label}</p>
+                  <p className={clsx('text-lg font-bold', score >= 70 ? 'text-emerald-600' : score >= 60 ? 'text-amber-600' : 'text-rose-600')}>{score}</p>
+                  <div className="w-full bg-slate-100 rounded-full h-1.5 mt-1">
+                    <div className={clsx('h-1.5 rounded-full', score >= 70 ? 'bg-emerald-400' : score >= 60 ? 'bg-amber-400' : 'bg-rose-400')} style={{ width: `${score}%` }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-slate-500">종합:</span>
+                <span className={clsx('text-sm font-bold', t.overall >= 70 ? 'text-emerald-600' : t.overall >= 60 ? 'text-amber-600' : 'text-rose-600')}>{t.overall}점</span>
+                <span className={clsx('text-[10px] px-1.5 py-0.5 rounded font-bold',
+                  t.overall >= 70 ? 'bg-emerald-50 text-emerald-700' : t.overall >= 60 ? 'bg-amber-50 text-amber-700' : 'bg-rose-50 text-rose-700'
+                )}>{t.overall >= 70 ? '정규 전환 가능' : t.overall >= 60 ? '보완 필요' : '집중 관리'}</span>
+              </div>
+              <button className="px-3 py-1 text-[10px] font-bold bg-slate-800 text-white rounded hover:bg-slate-700">평가 기록</button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function TierManagementSection() {
+  const TIERS = [
+    { tier: 1, label: 'Tier 1 (신입)', color: 'text-rose-700', bg: 'bg-rose-50', border: 'border-rose-200', members: ['최주원', '신입사'], desc: '매 건 동행, 매일 피드백', req: '계약 3건 이상 달성 시 승급' },
+    { tier: 2, label: 'Tier 2 (성장)', color: 'text-amber-700', bg: 'bg-amber-50', border: 'border-amber-200', members: ['이원이', '박하준'], desc: '주 1회 동행, 주간 피드백', req: '월 계약 5건 + QA 75점 시 승급' },
+    { tier: 3, label: 'Tier 3 (독립)', color: 'text-emerald-700', bg: 'bg-emerald-50', border: 'border-emerald-200', members: ['김상담'], desc: '월 1회 점검, 자율 운영', req: '멘토 역할 수행' },
+  ];
+
+  return (
+    <div className="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden">
+      <div className="px-6 py-4 border-b border-slate-200 bg-slate-50">
+        <h3 className="font-bold text-[#1e293b] text-sm flex items-center gap-2"><Star size={16} className="text-amber-500" /> 티어 분류 관리</h3>
+        <p className="text-xs text-slate-500 mt-0.5">영업팀원 역량 기반 3단계 티어 분류 및 코칭 기준</p>
+      </div>
+      <div className="p-4 space-y-3">
+        {TIERS.map(t => (
+          <div key={t.tier} className={clsx('rounded-lg border p-4', t.border, t.bg + '/30')}>
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <span className={clsx('text-sm font-bold', t.color)}>{t.label}</span>
+                <span className="text-[10px] text-slate-500">· {t.desc}</span>
+              </div>
+              <span className="text-xs text-slate-500">{t.members.length}명</span>
+            </div>
+            <div className="flex items-center gap-2 mb-2">
+              {t.members.map(name => (
+                <span key={name} className={clsx('px-2 py-1 rounded text-xs font-medium border', t.bg, t.color, t.border)}>{name}</span>
+              ))}
+              <button className="px-2 py-1 rounded text-[10px] font-bold border border-dashed border-slate-300 text-slate-400 hover:text-slate-600">+ 배정</button>
+            </div>
+            <p className="text-[10px] text-slate-500">승급 기준: {t.req}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function SalesReportSection() {
+  const SALES = [
+    { name: '박영업', meetings: 4, contracts: 2, premium: 3200000, reviews: 3, tier: 3, coached: true },
+    { name: '김영업', meetings: 3, contracts: 1, premium: 1800000, reviews: 2, tier: 2, coached: true },
+    { name: '이영업', meetings: 5, contracts: 3, premium: 4500000, reviews: 4, tier: 3, coached: false },
+    { name: '최영업', meetings: 2, contracts: 0, premium: 0, reviews: 1, tier: 1, coached: false },
+  ];
+  const totalM = SALES.reduce((s, d) => s + d.meetings, 0);
+  const totalC = SALES.reduce((s, d) => s + d.contracts, 0);
+  const totalP = SALES.reduce((s, d) => s + d.premium, 0);
+
+  return (
+    <div className="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden">
+      <div className="px-6 py-4 border-b border-slate-200 bg-slate-50">
+        <h3 className="font-bold text-[#1e293b] text-sm flex items-center gap-2"><Building2 size={16} className="text-blue-500" /> 영업팀 마감 보고</h3>
+        <p className="text-xs text-slate-500 mt-0.5">영업팀 일일 미팅/계약/설계 현황 (18:30 마감)</p>
+      </div>
+      <div className="p-4 space-y-3">
+        <div className="grid grid-cols-4 gap-2">
+          <div className="bg-blue-50 rounded-lg p-3 text-center">
+            <p className="text-[10px] text-blue-600">총 미팅</p>
+            <p className="text-xl font-bold text-blue-700">{totalM}건</p>
+          </div>
+          <div className="bg-emerald-50 rounded-lg p-3 text-center">
+            <p className="text-[10px] text-emerald-600">계약 체결</p>
+            <p className="text-xl font-bold text-emerald-700">{totalC}건</p>
+          </div>
+          <div className="bg-slate-50 rounded-lg p-3 text-center">
+            <p className="text-[10px] text-slate-500">체결률</p>
+            <p className="text-xl font-bold text-slate-700">{totalM > 0 ? Math.round((totalC / totalM) * 100) : 0}%</p>
+          </div>
+          <div className="bg-amber-50 rounded-lg p-3 text-center">
+            <p className="text-[10px] text-amber-600">총 보험료</p>
+            <p className="text-xl font-bold text-amber-700">₩{(totalP / 10000).toFixed(0)}만</p>
+          </div>
+        </div>
+        <div className="overflow-hidden rounded-lg border border-slate-200">
+          <table className="min-w-full text-xs">
+            <thead className="bg-slate-50">
+              <tr>
+                <th className="px-3 py-2 text-left font-medium text-slate-500">팀원</th>
+                <th className="px-3 py-2 text-center font-medium text-slate-500">티어</th>
+                <th className="px-3 py-2 text-center font-medium text-slate-500">미팅</th>
+                <th className="px-3 py-2 text-center font-medium text-slate-500">계약</th>
+                <th className="px-3 py-2 text-right font-medium text-slate-500">보험료</th>
+                <th className="px-3 py-2 text-center font-medium text-slate-500">설계리뷰</th>
+                <th className="px-3 py-2 text-center font-medium text-slate-500">코칭</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {SALES.map((s, i) => (
+                <tr key={i} className="hover:bg-slate-50">
+                  <td className="px-3 py-2 font-bold text-slate-700">{s.name}</td>
+                  <td className="px-3 py-2 text-center">
+                    <span className={clsx('px-1.5 py-0.5 rounded text-[10px] font-bold',
+                      s.tier === 3 ? 'bg-emerald-50 text-emerald-700' : s.tier === 2 ? 'bg-amber-50 text-amber-700' : 'bg-rose-50 text-rose-700'
+                    )}>T{s.tier}</span>
+                  </td>
+                  <td className="px-3 py-2 text-center font-medium text-slate-700">{s.meetings}</td>
+                  <td className="px-3 py-2 text-center font-bold text-emerald-600">{s.contracts}</td>
+                  <td className="px-3 py-2 text-right font-medium text-slate-700">₩{s.premium > 0 ? s.premium.toLocaleString() : '0'}</td>
+                  <td className="px-3 py-2 text-center text-slate-600">{s.reviews}</td>
+                  <td className="px-3 py-2 text-center">
+                    {s.coached ? <CheckCircle size={14} className="text-emerald-500 mx-auto" /> : <Clock size={14} className="text-amber-500 mx-auto" />}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function QualityFeedbackSection() {
+  const FEEDBACKS = [
+    { id: 'QF-01', staff: '김상담', category: '스크립트 준수', score: 92, feedback: '스크립트 전 항목 완벽 수행. 고객 반응에 따른 유연한 대응 우수.', type: 'positive' as const },
+    { id: 'QF-02', staff: '이원이', category: '응대 태도', score: 78, feedback: '전반적 양호하나 통화 종료 시 감사 인사 누락 빈번.', type: 'improvement' as const },
+    { id: 'QF-03', staff: '최주원', category: '상품 설명', score: 55, feedback: '보험 용어 설명 시 고객 혼란 유발. 쉬운 표현 교육 필요.', type: 'concern' as const },
+    { id: 'QF-04', staff: '박하준', category: '클로징', score: 70, feedback: '미팅 전환 유도 시 너무 직접적. 자연스러운 전환 화법 연습 권장.', type: 'improvement' as const },
+  ];
+  const TYPE_CFG = {
+    positive: { label: '우수', bg: 'bg-emerald-50', text: 'text-emerald-700' },
+    improvement: { label: '보완', bg: 'bg-amber-50', text: 'text-amber-700' },
+    concern: { label: '주의', bg: 'bg-rose-50', text: 'text-rose-700' },
+  };
+
+  return (
+    <div className="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden">
+      <div className="px-6 py-4 border-b border-slate-200 bg-slate-50">
+        <h3 className="font-bold text-[#1e293b] text-sm flex items-center gap-2"><MessageSquare size={16} className="text-violet-500" /> 품질 모니터링 피드백</h3>
+        <p className="text-xs text-slate-500 mt-0.5">팀장 실시간 상담 모니터링 결과 및 개인별 피드백</p>
+      </div>
+      <div className="p-4 space-y-2">
+        {FEEDBACKS.map(fb => {
+          const cfg = TYPE_CFG[fb.type];
+          return (
+            <div key={fb.id} className={clsx('rounded-lg border p-3 space-y-1.5', fb.type === 'concern' ? 'border-rose-200' : 'border-slate-200')}>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-slate-700">{fb.staff}</span>
+                  <span className="text-[10px] text-slate-400">· {fb.category}</span>
+                  <span className={clsx('px-1.5 py-0.5 rounded text-[10px] font-bold', cfg.bg, cfg.text)}>{cfg.label}</span>
+                </div>
+                <span className={clsx('text-sm font-bold', fb.score >= 80 ? 'text-emerald-600' : fb.score >= 60 ? 'text-amber-600' : 'text-rose-600')}>{fb.score}점</span>
+              </div>
+              <p className="text-xs text-slate-600 leading-relaxed">{fb.feedback}</p>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

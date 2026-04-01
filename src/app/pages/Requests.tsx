@@ -94,11 +94,27 @@ export function Requests({ onNavigate }: { onNavigate?: (path: string) => void }
   return <RequestList onSelect={handleSelect} requests={requestRows} />;
 }
 
+const STEP_TABS = [
+  { key: 'all', label: '전체' },
+  { key: 'S2', label: '조회 중 (S2)' },
+  { key: 'S3', label: '신청 완료 (S3)' },
+  { key: 'S4', label: '배정 대기 (S4)' },
+] as const;
+
+type StepTabKey = typeof STEP_TABS[number]['key'];
+
+/** Mock: 각 접수건에 currentStep 매핑 */
+function assignMockStep(req: typeof REQUESTS[number], idx: number): typeof REQUESTS[number] & { currentStep: string } {
+  const steps = ['S2', 'S3', 'S4', 'S5', 'S3', 'S2', 'S4', 'S3'];
+  return { ...req, currentStep: steps[idx % steps.length] };
+}
+
 function RequestList({ onSelect, requests }: { onSelect: (id: string) => void; requests: typeof REQUESTS }) {
   const defaultCustomPeriodRange = useMemo(() => getDefaultCustomPeriodRange(), []);
   const [periodPreset, setPeriodPreset] = useState<PerformancePeriodPreset>('this_month');
   const [customPeriodStartDate, setCustomPeriodStartDate] = useState(defaultCustomPeriodRange.startDate);
   const [customPeriodEndDate, setCustomPeriodEndDate] = useState(defaultCustomPeriodRange.endDate);
+  const [activeTab, setActiveTab] = useState<StepTabKey>('all');
   const allRange = useMemo(
     () => getRowsDateBounds(requests, (request) => request.date, defaultCustomPeriodRange),
     [defaultCustomPeriodRange, requests]
@@ -109,10 +125,32 @@ function RequestList({ onSelect, requests }: { onSelect: (id: string) => void; r
     [allRange, customPeriodEndDate, customPeriodStartDate, periodPreset]
   );
 
-  const filteredRequests = useMemo(
+  const periodFiltered = useMemo(
     () => filterRowsByPeriod(requests, periodRange, (request) => request.date),
     [periodRange, requests]
   );
+
+  const requestsWithStep = useMemo(
+    () => periodFiltered.map((req, idx) => assignMockStep(req, idx)),
+    [periodFiltered]
+  );
+
+  const stepCounts = useMemo(() => ({
+    all: requestsWithStep.length,
+    S2: requestsWithStep.filter(r => r.currentStep === 'S2').length,
+    S3: requestsWithStep.filter(r => r.currentStep === 'S3').length,
+    S4: requestsWithStep.filter(r => r.currentStep === 'S4').length,
+  }), [requestsWithStep]);
+
+  const filteredRequests = useMemo(
+    () => activeTab === 'all' ? requestsWithStep : requestsWithStep.filter(r => r.currentStep === activeTab),
+    [activeTab, requestsWithStep]
+  );
+
+  // Summary metrics (mock)
+  const lookupRate = 85;   // 조회 완료율
+  const conversionRate = 62; // 조회→신청 전환율
+  const dropoutRate = 18;    // 신청 이탈률
 
   return (
     <div className="flex flex-col h-full bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
@@ -139,6 +177,51 @@ function RequestList({ onSelect, requests }: { onSelect: (id: string) => void; r
         </div>
       </div>
 
+      {/* Summary Cards (S2-S3 Metrics) */}
+      <div className="px-6 py-3 border-b border-slate-100 bg-slate-50/50">
+        <div className="flex gap-4">
+          <div className="flex items-center gap-2 px-3 py-2 bg-white rounded border border-slate-200 shadow-sm">
+            <CheckCircle2 size={14} className="text-blue-500" />
+            <span className="text-xs text-slate-500">조회 완료율</span>
+            <span className="text-sm font-bold text-[#1e293b]">{lookupRate}%</span>
+          </div>
+          <div className="flex items-center gap-2 px-3 py-2 bg-white rounded border border-slate-200 shadow-sm">
+            <ArrowLeft size={14} className="text-emerald-500 rotate-180" />
+            <span className="text-xs text-slate-500">조회→신청 전환율</span>
+            <span className="text-sm font-bold text-emerald-700">{conversionRate}%</span>
+          </div>
+          <div className="flex items-center gap-2 px-3 py-2 bg-white rounded border border-slate-200 shadow-sm">
+            <AlertCircle size={14} className="text-rose-400" />
+            <span className="text-xs text-slate-500">신청 이탈률</span>
+            <span className="text-sm font-bold text-rose-600">{dropoutRate}%</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Step Filter Tabs */}
+      <div className="px-6 pt-3 pb-0 border-b border-slate-200 bg-white flex gap-1">
+        {STEP_TABS.map(tab => (
+          <button
+            key={tab.key}
+            onClick={() => setActiveTab(tab.key)}
+            className={clsx(
+              'px-4 py-2 text-xs font-bold rounded-t border-b-2 transition-colors',
+              activeTab === tab.key
+                ? 'text-[#1e293b] border-[#1e293b] bg-slate-50'
+                : 'text-slate-400 border-transparent hover:text-slate-600 hover:bg-slate-50'
+            )}
+          >
+            {tab.label}
+            <span className={clsx(
+              'ml-1.5 px-1.5 py-0.5 rounded-full text-[10px]',
+              activeTab === tab.key ? 'bg-[#1e293b] text-white' : 'bg-slate-100 text-slate-400'
+            )}>
+              {stepCounts[tab.key]}
+            </span>
+          </button>
+        ))}
+      </div>
+
       {/* List Table */}
       <div className="flex-1 overflow-auto">
         <table className="w-full text-sm text-left">
@@ -149,6 +232,7 @@ function RequestList({ onSelect, requests }: { onSelect: (id: string) => void; r
               <th className="px-6 py-3 font-medium">고객명</th>
               <th className="px-6 py-3 font-medium">접수일</th>
               <th className="px-6 py-3 font-medium">현재 단계</th>
+              <th className="px-6 py-3 font-medium">스텝</th>
               <th className="px-6 py-3 font-medium">담당팀</th>
               <th className="px-6 py-3 font-medium">상태</th>
               <th className="px-6 py-3 font-medium text-right">상세</th>
@@ -176,6 +260,11 @@ function RequestList({ onSelect, requests }: { onSelect: (id: string) => void; r
                     req.stage === '청구' ? "text-[#0f766e]" : "text-slate-400"
                   )}>
                     {req.stage}
+                  </span>
+                </td>
+                <td className="px-6 py-4">
+                  <span className="inline-flex px-2 py-0.5 rounded bg-slate-100 text-xs font-mono font-bold text-slate-500">
+                    {(req as any).currentStep || '-'}
                   </span>
                 </td>
                 <td className="px-6 py-4 text-slate-600">{req.team}</td>

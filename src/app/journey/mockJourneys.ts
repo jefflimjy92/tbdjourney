@@ -1,13 +1,23 @@
 import type {
   AuditEvent,
   ConsultationDraft,
+  DbCategoryV2,
   DocumentRequirement,
   IntegrationTask,
+  JourneyPhase,
+  JourneyStep,
   MeetingDraft,
   RequestJourney,
 } from '@/app/journey/types';
 
 const now = '2026-03-10 10:00';
+
+/** DB 카테고리 레거시→V2 변환 */
+function toDbCategoryV2(legacy: string): DbCategoryV2 {
+  if (legacy === 'compensation') return 'compensation';
+  if (legacy === 'intro') return 'referral';
+  return 'possible';
+}
 
 export const DEFAULT_CONSULTATION_DRAFT: ConsultationDraft = {
   currentStep: 'step1',
@@ -259,6 +269,15 @@ export function createInitialJourneys(): RequestJourney[] {
         buildAudit('광고 유입 접수 완료', 'System', 'status_changed', 'success'),
         buildAudit('심평원 조회 결과 검토 시작', '김상담', 'integration_updated'),
       ],
+      phase: 'tm' as JourneyPhase,
+      step: 'S5_first_tm' as JourneyStep,
+      dbCategoryV2: 'compensation' as DbCategoryV2,
+      stepHistory: [
+        { step: 'S1_inflow' as JourneyStep, enteredAt: '2026-03-09 08:00', exitedAt: '2026-03-09 08:05' },
+        { step: 'S2_hira_lookup' as JourneyStep, enteredAt: '2026-03-09 08:05', exitedAt: '2026-03-09 09:12' },
+        { step: 'S3_refund_apply' as JourneyStep, enteredAt: '2026-03-09 09:12', exitedAt: '2026-03-09 09:30' },
+        { step: 'S4_screening' as JourneyStep, enteredAt: '2026-03-09 09:30', exitedAt: '2026-03-10 09:00' },
+      ],
       consultationDraft: {
         ...DEFAULT_CONSULTATION_DRAFT,
         currentStep: 'step2',
@@ -318,6 +337,16 @@ export function createInitialJourneys(): RequestJourney[] {
       auditTrail: [
         buildAudit('상담팀에서 미팅팀으로 인계 완료', 'System', 'handoff', 'success'),
       ],
+      phase: 'meeting' as JourneyPhase,
+      step: 'S8_meeting_execution' as JourneyStep,
+      dbCategoryV2: 'possible' as DbCategoryV2,
+      stepHistory: [
+        { step: 'S1_inflow' as JourneyStep, enteredAt: '2026-03-08 10:00', exitedAt: '2026-03-08 10:05' },
+        { step: 'S4_screening' as JourneyStep, enteredAt: '2026-03-08 14:00', exitedAt: '2026-03-09 09:00' },
+        { step: 'S5_first_tm' as JourneyStep, enteredAt: '2026-03-09 09:00', exitedAt: '2026-03-09 15:00' },
+        { step: 'S6_second_tm' as JourneyStep, enteredAt: '2026-03-09 15:00', exitedAt: '2026-03-10 08:00' },
+        { step: 'S7_pre_analysis' as JourneyStep, enteredAt: '2026-03-10 08:00', exitedAt: '2026-03-10 10:00' },
+      ],
       consultationDraft: {
         ...DEFAULT_CONSULTATION_DRAFT,
         currentStep: 'step4',
@@ -376,6 +405,12 @@ export function createInitialJourneys(): RequestJourney[] {
       documentRequirements: buildDocuments('simple'),
       integrationTasks: buildIntegrations('simple').map((task) => task.provider === 'hira' ? { ...task, state: 'requested', reviewedBy: undefined, verifiedAt: undefined } : task),
       auditTrail: [buildAudit('신규 배정건 확인 필요', 'System', 'status_changed')],
+      phase: 'classification' as JourneyPhase,
+      step: 'S4_screening' as JourneyStep,
+      dbCategoryV2: 'possible' as DbCategoryV2,
+      stepHistory: [
+        { step: 'S1_inflow' as JourneyStep, enteredAt: '2026-03-10 08:00', exitedAt: '2026-03-10 08:10' },
+      ],
       consultationDraft: {
         ...DEFAULT_CONSULTATION_DRAFT,
         contactAttempts: '3',
@@ -412,6 +447,14 @@ export function createInitialJourneys(): RequestJourney[] {
       documentRequirements: buildDocuments('refund'),
       integrationTasks: buildIntegrations('refund'),
       auditTrail: [buildAudit('고객 단순 변심으로 종결', '이팀장', 'status_changed', 'warning')],
+      phase: 'tm' as JourneyPhase,
+      step: 'S5_first_tm' as JourneyStep,
+      dbCategoryV2: 'possible' as DbCategoryV2,
+      stepHistory: [
+        { step: 'S1_inflow' as JourneyStep, enteredAt: '2026-03-08 08:00', exitedAt: '2026-03-08 08:05' },
+        { step: 'S4_screening' as JourneyStep, enteredAt: '2026-03-08 10:00', exitedAt: '2026-03-09 09:00' },
+        { step: 'S5_first_tm' as JourneyStep, enteredAt: '2026-03-09 09:00', exitedAt: '2026-03-09 16:20' },
+      ],
       consultationDraft: {
         ...DEFAULT_CONSULTATION_DRAFT,
         currentStep: 'step4',
@@ -446,6 +489,15 @@ export function createInitialJourneys(): RequestJourney[] {
       documentRequirements: buildDocuments('intro'),
       integrationTasks: buildIntegrations('intro'),
       auditTrail: [buildAudit('소개 고객으로 추가 생성', 'System', 'note', 'success')],
+      phase: 'meeting' as JourneyPhase,
+      step: 'R5_meeting_execution' as JourneyStep,
+      dbCategoryV2: 'referral' as DbCategoryV2,
+      stepHistory: [
+        { step: 'R1_referral_inflow' as JourneyStep, enteredAt: '2026-03-08 08:00', exitedAt: '2026-03-08 08:10' },
+        { step: 'R2_hira_lookup' as JourneyStep, enteredAt: '2026-03-08 08:10', exitedAt: '2026-03-08 10:00' },
+        { step: 'R3_refund_apply' as JourneyStep, enteredAt: '2026-03-08 10:00', exitedAt: '2026-03-08 14:00' },
+        { step: 'R4_pre_analysis' as JourneyStep, enteredAt: '2026-03-08 14:00', exitedAt: '2026-03-09 09:00' },
+      ],
       consultationDraft: {
         ...DEFAULT_CONSULTATION_DRAFT,
         currentStep: 'step4',
@@ -502,6 +554,14 @@ export function createInitialJourneys(): RequestJourney[] {
       documentRequirements: buildDocuments('refund'),
       integrationTasks: buildIntegrations('refund'),
       auditTrail: [buildAudit('미팅 배정 대기 고객으로 전환', '김상담', 'handoff', 'success')],
+      phase: 'tm' as JourneyPhase,
+      step: 'S6_second_tm' as JourneyStep,
+      dbCategoryV2: 'compensation' as DbCategoryV2,
+      stepHistory: [
+        { step: 'S1_inflow' as JourneyStep, enteredAt: '2026-03-14 08:00', exitedAt: '2026-03-14 08:10' },
+        { step: 'S4_screening' as JourneyStep, enteredAt: '2026-03-14 14:00', exitedAt: '2026-03-15 09:00' },
+        { step: 'S5_first_tm' as JourneyStep, enteredAt: '2026-03-15 09:00', exitedAt: '2026-03-16 10:00' },
+      ],
       consultationDraft: {
         ...DEFAULT_CONSULTATION_DRAFT,
         currentStep: 'step4',
@@ -546,6 +606,15 @@ export function createInitialJourneys(): RequestJourney[] {
       documentRequirements: buildDocuments('refund'),
       integrationTasks: buildIntegrations('refund'),
       auditTrail: [buildAudit('2팀 최미팅에게 우선 배정', '이관관리', 'handoff', 'success')],
+      phase: 'meeting' as JourneyPhase,
+      step: 'S7_pre_analysis' as JourneyStep,
+      dbCategoryV2: 'possible' as DbCategoryV2,
+      stepHistory: [
+        { step: 'S1_inflow' as JourneyStep, enteredAt: '2026-03-14 08:00', exitedAt: '2026-03-14 08:10' },
+        { step: 'S4_screening' as JourneyStep, enteredAt: '2026-03-14 14:00', exitedAt: '2026-03-15 09:00' },
+        { step: 'S5_first_tm' as JourneyStep, enteredAt: '2026-03-15 09:00', exitedAt: '2026-03-15 16:00' },
+        { step: 'S6_second_tm' as JourneyStep, enteredAt: '2026-03-15 16:00', exitedAt: '2026-03-16 09:00' },
+      ],
       consultationDraft: {
         ...DEFAULT_CONSULTATION_DRAFT,
         currentStep: 'step4',
@@ -589,6 +658,14 @@ export function createInitialJourneys(): RequestJourney[] {
       documentRequirements: buildDocuments('refund'),
       integrationTasks: buildIntegrations('refund'),
       auditTrail: [buildAudit('방문 희망 지역 입력 완료', '김상담', 'draft_saved')],
+      phase: 'tm' as JourneyPhase,
+      step: 'S6_second_tm' as JourneyStep,
+      dbCategoryV2: 'compensation' as DbCategoryV2,
+      stepHistory: [
+        { step: 'S1_inflow' as JourneyStep, enteredAt: '2026-03-15 08:00', exitedAt: '2026-03-15 08:10' },
+        { step: 'S4_screening' as JourneyStep, enteredAt: '2026-03-15 14:00', exitedAt: '2026-03-16 09:00' },
+        { step: 'S5_first_tm' as JourneyStep, enteredAt: '2026-03-16 09:00', exitedAt: '2026-03-16 11:30' },
+      ],
       consultationDraft: {
         ...DEFAULT_CONSULTATION_DRAFT,
         currentStep: 'step4',
@@ -626,6 +703,14 @@ export function createInitialJourneys(): RequestJourney[] {
       documentRequirements: buildDocuments('refund'),
       integrationTasks: buildIntegrations('refund'),
       auditTrail: [buildAudit('방문 희망 지역 입력 완료', '김상담', 'draft_saved')],
+      phase: 'tm' as JourneyPhase,
+      step: 'S6_second_tm' as JourneyStep,
+      dbCategoryV2: 'compensation' as DbCategoryV2,
+      stepHistory: [
+        { step: 'S1_inflow' as JourneyStep, enteredAt: '2026-03-15 10:00', exitedAt: '2026-03-15 10:10' },
+        { step: 'S4_screening' as JourneyStep, enteredAt: '2026-03-15 14:00', exitedAt: '2026-03-16 09:00' },
+        { step: 'S5_first_tm' as JourneyStep, enteredAt: '2026-03-16 09:00', exitedAt: '2026-03-16 10:50' },
+      ],
       consultationDraft: {
         ...DEFAULT_CONSULTATION_DRAFT,
         currentStep: 'step4',
@@ -663,6 +748,17 @@ export function createInitialJourneys(): RequestJourney[] {
       documentRequirements: buildDocuments('simple'),
       integrationTasks: buildIntegrations('simple'),
       auditTrail: [buildAudit('미팅 결과와 계약 정보 저장', '전선덕', 'status_changed', 'success')],
+      phase: 'meeting' as JourneyPhase,
+      step: 'S9_contract_close' as JourneyStep,
+      dbCategoryV2: 'possible' as DbCategoryV2,
+      stepHistory: [
+        { step: 'S1_inflow' as JourneyStep, enteredAt: '2026-03-13 08:00', exitedAt: '2026-03-13 08:10' },
+        { step: 'S4_screening' as JourneyStep, enteredAt: '2026-03-13 14:00', exitedAt: '2026-03-14 09:00' },
+        { step: 'S5_first_tm' as JourneyStep, enteredAt: '2026-03-14 09:00', exitedAt: '2026-03-14 15:00' },
+        { step: 'S6_second_tm' as JourneyStep, enteredAt: '2026-03-14 15:00', exitedAt: '2026-03-15 09:00' },
+        { step: 'S7_pre_analysis' as JourneyStep, enteredAt: '2026-03-15 09:00', exitedAt: '2026-03-16 10:00' },
+        { step: 'S8_meeting_execution' as JourneyStep, enteredAt: '2026-03-16 10:00', exitedAt: '2026-03-16 14:00' },
+      ],
       consultationDraft: { ...DEFAULT_CONSULTATION_DRAFT },
       meetingDraft: {
         ...DEFAULT_MEETING_DRAFT,
@@ -761,6 +857,15 @@ export function createInitialJourneys(): RequestJourney[] {
       documentRequirements: buildDocuments('simple'),
       integrationTasks: buildIntegrations('simple'),
       auditTrail: [buildAudit('후속 미팅 메모 저장', '이태윤', 'draft_saved')],
+      phase: 'meeting' as JourneyPhase,
+      step: 'S8_meeting_execution' as JourneyStep,
+      dbCategoryV2: 'possible' as DbCategoryV2,
+      stepHistory: [
+        { step: 'S1_inflow' as JourneyStep, enteredAt: '2026-03-12 08:00', exitedAt: '2026-03-12 08:10' },
+        { step: 'S4_screening' as JourneyStep, enteredAt: '2026-03-12 14:00', exitedAt: '2026-03-13 09:00' },
+        { step: 'S5_first_tm' as JourneyStep, enteredAt: '2026-03-13 09:00', exitedAt: '2026-03-13 15:00' },
+        { step: 'S7_pre_analysis' as JourneyStep, enteredAt: '2026-03-13 15:00', exitedAt: '2026-03-14 10:00' },
+      ],
       consultationDraft: { ...DEFAULT_CONSULTATION_DRAFT },
       meetingDraft: {
         ...DEFAULT_MEETING_DRAFT,
@@ -818,6 +923,16 @@ export function createInitialJourneys(): RequestJourney[] {
       documentRequirements: buildDocuments('refund'),
       integrationTasks: buildIntegrations('refund'),
       auditTrail: [buildAudit('계약 2건 등록 및 인계 준비', '유여름', 'status_changed', 'success')],
+      phase: 'meeting' as JourneyPhase,
+      step: 'S9_contract_close' as JourneyStep,
+      dbCategoryV2: 'compensation' as DbCategoryV2,
+      stepHistory: [
+        { step: 'S1_inflow' as JourneyStep, enteredAt: '2026-03-13 08:00', exitedAt: '2026-03-13 08:10' },
+        { step: 'S4_screening' as JourneyStep, enteredAt: '2026-03-13 14:00', exitedAt: '2026-03-14 09:00' },
+        { step: 'S5_first_tm' as JourneyStep, enteredAt: '2026-03-14 09:00', exitedAt: '2026-03-15 10:00' },
+        { step: 'S6_second_tm' as JourneyStep, enteredAt: '2026-03-15 10:00', exitedAt: '2026-03-16 09:00' },
+        { step: 'S8_meeting_execution' as JourneyStep, enteredAt: '2026-03-16 09:00', exitedAt: '2026-03-16 21:00' },
+      ],
       consultationDraft: { ...DEFAULT_CONSULTATION_DRAFT },
       meetingDraft: {
         ...DEFAULT_MEETING_DRAFT,
@@ -940,6 +1055,15 @@ export function createInitialJourneys(): RequestJourney[] {
       auditTrail: [
         buildAudit('청구팀 검증 큐로 인계', 'System', 'claim', 'success'),
         buildAudit('동반신청 원본 보존 후 제외 검토 시작', '박청구', 'override'),
+      ],
+      phase: 'claims' as JourneyPhase,
+      step: 'S12_doc_issuance' as JourneyStep,
+      dbCategoryV2: 'possible' as DbCategoryV2,
+      stepHistory: [
+        { step: 'S1_inflow' as JourneyStep, enteredAt: '2026-03-15 08:00', exitedAt: '2026-03-15 08:10' },
+        { step: 'S4_screening' as JourneyStep, enteredAt: '2026-03-15 14:00', exitedAt: '2026-03-16 09:00' },
+        { step: 'S8_meeting_execution' as JourneyStep, enteredAt: '2026-03-17 10:00', exitedAt: '2026-03-17 16:30' },
+        { step: 'S10_claim_receipt' as JourneyStep, enteredAt: '2026-03-18 09:00', exitedAt: '2026-03-18 09:20' },
       ],
       consultationDraft: {
         ...DEFAULT_CONSULTATION_DRAFT,
