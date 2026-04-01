@@ -1,3 +1,3 @@
-import { CUSTOMER_MASTER_DERIVED_MOCK as GENERATED_CUSTOMER_MASTER_DERIVED_MOCK } from '@/app/mockData/generated/customerMasterDerived.generated';
+import { CUSTOMER_MASTER_DERIVED_MOCK as GENERATED_CUSTOMER_MASTER_DERIVED_MOCK } from '@/app/mockData/generated/customerMasterDerived.app';
 
 export const CUSTOMER_MASTER_DERIVED_MOCK = GENERATED_CUSTOMER_MASTER_DERIVED_MOCK;

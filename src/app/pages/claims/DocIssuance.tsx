@@ -195,6 +195,178 @@ function FieldTeamPanel() {
   );
 }
 
+// ── 외주업체 발급 관리 ──
+
+type OutsourceRequestStatus = 'received' | 'issuing' | 'completed' | 'failed';
+
+function OutsourceIssuancePanel() {
+  const [requests] = React.useState([
+    {
+      id: 'OS-001',
+      customer: '김서준',
+      institution: '서울아산병원',
+      documentType: '입퇴원확인서',
+      requestedAt: '2026-04-01',
+      vendor: '투에이치',
+      status: 'received' as OutsourceRequestStatus,
+      eta: '2026-04-03',
+    },
+    {
+      id: 'OS-002',
+      customer: '박유리',
+      institution: '강남메디컬',
+      documentType: '진료비 세부내역서',
+      requestedAt: '2026-03-31',
+      vendor: '투에이치',
+      status: 'issuing' as OutsourceRequestStatus,
+      eta: '2026-04-02',
+    },
+    {
+      id: 'OS-003',
+      customer: '정민재',
+      institution: '인천중앙병원',
+      documentType: '의무기록사본',
+      requestedAt: '2026-03-29',
+      vendor: '투에이치',
+      status: 'completed' as OutsourceRequestStatus,
+      eta: '2026-03-31',
+    },
+    {
+      id: 'OS-004',
+      customer: '이서현',
+      institution: '한양의원',
+      documentType: '약제비 영수증',
+      requestedAt: '2026-03-28',
+      vendor: '투에이치',
+      status: 'failed' as OutsourceRequestStatus,
+      eta: '2026-03-30',
+    },
+  ]);
+
+  const STATUS_CFG = {
+    received: { label: '접수', bg: 'bg-slate-100', text: 'text-slate-700' },
+    issuing: { label: '발급중', bg: 'bg-blue-50', text: 'text-blue-700' },
+    completed: { label: '발급완료', bg: 'bg-emerald-50', text: 'text-emerald-700' },
+    failed: { label: '실패', bg: 'bg-rose-50', text: 'text-rose-700' },
+  };
+
+  return (
+    <div className="rounded-xl border border-gray-200 bg-white p-5 space-y-4">
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-bold text-gray-800 flex items-center gap-2">
+          <Building className="h-4 w-4 text-violet-500" />
+          외주 발급 요청 관리
+        </h3>
+        <span className="rounded-full bg-violet-50 px-2 py-1 text-[10px] font-bold text-violet-700">투에이치 연동 Mock</span>
+      </div>
+
+      <div className="overflow-hidden rounded-lg border border-gray-200">
+        <table className="min-w-full text-xs">
+          <thead className="bg-gray-50">
+            <tr>
+              <th className="px-3 py-2 text-left font-medium text-gray-500">요청ID</th>
+              <th className="px-3 py-2 text-left font-medium text-gray-500">고객명</th>
+              <th className="px-3 py-2 text-left font-medium text-gray-500">기관명</th>
+              <th className="px-3 py-2 text-left font-medium text-gray-500">서류유형</th>
+              <th className="px-3 py-2 text-left font-medium text-gray-500">요청일</th>
+              <th className="px-3 py-2 text-left font-medium text-gray-500">외주업체</th>
+              <th className="px-3 py-2 text-center font-medium text-gray-500">요청상태</th>
+              <th className="px-3 py-2 text-left font-medium text-gray-500">예상완료일</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100">
+            {requests.map((request) => {
+              const st = STATUS_CFG[request.status];
+              return (
+                <tr key={request.id} className={clsx(request.status === 'failed' && 'bg-rose-50/40')}>
+                  <td className="px-3 py-2 font-medium text-gray-700">{request.id}</td>
+                  <td className="px-3 py-2 text-gray-700">{request.customer}</td>
+                  <td className="px-3 py-2 text-gray-600">{request.institution}</td>
+                  <td className="px-3 py-2 text-gray-600">{request.documentType}</td>
+                  <td className="px-3 py-2 text-gray-500">{request.requestedAt}</td>
+                  <td className="px-3 py-2 text-gray-600">{request.vendor}</td>
+                  <td className="px-3 py-2 text-center">
+                    <span className={clsx('px-1.5 py-0.5 rounded text-[10px] font-bold', st.bg, st.text)}>{st.label}</span>
+                  </td>
+                  <td className="px-3 py-2 text-gray-500">{request.eta}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function OutsourcePerformancePanel() {
+  const [recentResults] = React.useState([
+    { id: 'TH-2401', completedAt: '2026-04-01 10:20', institution: '서울아산병원', turnaroundDays: 2.1, outcome: '성공' as const },
+    { id: 'TH-2398', completedAt: '2026-03-31 16:05', institution: '인천중앙병원', turnaroundDays: 1.8, outcome: '성공' as const },
+    { id: 'TH-2395', completedAt: '2026-03-30 14:40', institution: '한양의원', turnaroundDays: 3.4, outcome: '실패' as const },
+  ]);
+
+  const kpis = [
+    { label: '월 처리건수', value: '42건', tone: 'text-violet-700', bg: 'bg-violet-50' },
+    { label: '평균 소요일', value: '2.4일', tone: 'text-blue-700', bg: 'bg-blue-50' },
+    { label: '성공률', value: '88%', tone: 'text-emerald-700', bg: 'bg-emerald-50' },
+    { label: '실패율', value: '12%', tone: 'text-rose-700', bg: 'bg-rose-50' },
+  ];
+
+  return (
+    <div className="rounded-xl border border-gray-200 bg-white p-5 space-y-4">
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-bold text-gray-800 flex items-center gap-2">
+          <Users className="h-4 w-4 text-blue-500" />
+          외주업체 발급 현황 추적
+        </h3>
+        <span className="text-[10px] text-gray-400">최근 30일 기준</span>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
+        {kpis.map((kpi) => (
+          <div key={kpi.label} className={clsx('rounded-lg p-3 text-center', kpi.bg)}>
+            <p className="text-[10px] text-gray-500">{kpi.label}</p>
+            <p className={clsx('text-xl font-bold mt-1', kpi.tone)}>{kpi.value}</p>
+          </div>
+        ))}
+      </div>
+
+      <div className="overflow-hidden rounded-lg border border-gray-200">
+        <table className="min-w-full text-xs">
+          <thead className="bg-gray-50">
+            <tr>
+              <th className="px-3 py-2 text-left font-medium text-gray-500">처리ID</th>
+              <th className="px-3 py-2 text-left font-medium text-gray-500">완료일시</th>
+              <th className="px-3 py-2 text-left font-medium text-gray-500">기관명</th>
+              <th className="px-3 py-2 text-right font-medium text-gray-500">소요일</th>
+              <th className="px-3 py-2 text-center font-medium text-gray-500">결과</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100">
+            {recentResults.map((row) => (
+              <tr key={row.id}>
+                <td className="px-3 py-2 font-medium text-gray-700">{row.id}</td>
+                <td className="px-3 py-2 text-gray-500">{row.completedAt}</td>
+                <td className="px-3 py-2 text-gray-600">{row.institution}</td>
+                <td className="px-3 py-2 text-right text-gray-700 font-medium">{row.turnaroundDays.toFixed(1)}일</td>
+                <td className="px-3 py-2 text-center">
+                  <span className={clsx(
+                    'px-1.5 py-0.5 rounded text-[10px] font-bold',
+                    row.outcome === '성공' ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'
+                  )}>
+                    {row.outcome}
+                  </span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 // ── Main Component ──
 
 interface DocIssuanceProps {
@@ -210,6 +382,10 @@ export function DocIssuance({ type, initialRequestId, onNavigate }: DocIssuanceP
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <DistributionPrepPanel />
         <FieldTeamPanel />
+      </div>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <OutsourceIssuancePanel />
+        <OutsourcePerformancePanel />
       </div>
       {/* 기존 서류 발급 Claims */}
       <Claims

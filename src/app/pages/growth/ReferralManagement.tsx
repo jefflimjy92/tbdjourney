@@ -25,6 +25,8 @@ import clsx from 'clsx';
 
 type ReferralStatus = 'pending' | 'contacted' | 'converted' | 'declined';
 type ReferralRelation = 'spouse' | 'sibling' | 'parent' | 'child' | 'colleague' | 'friend' | 'other';
+type ReentrySource = '소개' | '직접' | '광고';
+type ReentryAssignmentStatus = 'auto_assigned' | 'manual_required' | 'pending';
 
 const RELATION_LABELS: Record<ReferralRelation, string> = {
   spouse: '배우자', sibling: '형제/자매', parent: '부모', child: '자녀',
@@ -47,6 +49,19 @@ interface ReferralRecord {
   rewardGiven: boolean;
   notes: string;
   currentStep: string;
+}
+
+interface ReentryRecord {
+  id: string;
+  customerName: string;
+  previousJourneyId: string;
+  previousCompletedAt: string;
+  reentryDate: string;
+  source: ReentrySource;
+  currentStep: string;
+  assignmentStatus: ReentryAssignmentStatus;
+  assignedOwner: string;
+  note: string;
 }
 
 const MOCK_REFERRALS: ReferralRecord[] = [
@@ -144,9 +159,57 @@ const STATUS_CONFIG: Record<ReferralStatus, { label: string; color: string; bg: 
   declined: { label: '거절', color: 'text-red-700', bg: 'bg-red-50' },
 };
 
+const REENTRY_STATUS_CONFIG: Record<
+  ReentryAssignmentStatus,
+  { label: string; color: string; bg: string }
+> = {
+  auto_assigned: { label: '자동배정완료', color: 'text-emerald-700', bg: 'bg-emerald-50' },
+  manual_required: { label: '수동배정필요', color: 'text-rose-700', bg: 'bg-rose-50' },
+  pending: { label: '배정대기', color: 'text-amber-700', bg: 'bg-amber-50' },
+};
+
+const MOCK_REENTRIES: ReentryRecord[] = [
+  {
+    id: 'RE-001',
+    customerName: '김영희',
+    previousJourneyId: 'R-2026-015',
+    previousCompletedAt: '2026-03-19',
+    reentryDate: '2026-03-31',
+    source: '소개',
+    currentStep: 'S4',
+    assignmentStatus: 'auto_assigned',
+    assignedOwner: '박영업',
+    note: '기존 담당자에게 자동 연결, 상담 슬롯 확보 완료',
+  },
+  {
+    id: 'RE-002',
+    customerName: '정은지',
+    previousJourneyId: 'R-2025-402',
+    previousCompletedAt: '2025-12-12',
+    reentryDate: '2026-04-01',
+    source: '광고',
+    currentStep: 'S4',
+    assignmentStatus: 'manual_required',
+    assignedOwner: '-',
+    note: '이전 담당자 퇴사로 수동 재배정 필요',
+  },
+  {
+    id: 'RE-003',
+    customerName: '오민석',
+    previousJourneyId: 'R-2026-044',
+    previousCompletedAt: '2026-02-27',
+    reentryDate: '2026-04-01',
+    source: '직접',
+    currentStep: 'R14',
+    assignmentStatus: 'pending',
+    assignedOwner: '최영업',
+    note: '재유입 확인 후 S4 자동배정 대기',
+  },
+];
+
 export function ReferralManagement() {
   const [statusFilter, setStatusFilter] = React.useState<ReferralStatus | 'all'>('all');
-  const [activeTab, setActiveTab] = React.useState<'referrals' | 'journey' | 'family'>('referrals');
+  const [activeTab, setActiveTab] = React.useState<'referrals' | 'journey' | 'family' | 'reentry'>('referrals');
 
   const filtered = MOCK_REFERRALS.filter(
     (r) => statusFilter === 'all' || r.status === statusFilter
@@ -163,6 +226,8 @@ export function ReferralManagement() {
       (MOCK_REFERRALS.filter((r) => r.sameOwnerApplied).length / MOCK_REFERRALS.length) * 100
     ),
     pendingAssignment: MOCK_REFERRALS.filter((r) => !r.assignedOwner && r.status !== 'declined').length,
+    reentries: MOCK_REENTRIES.length,
+    autoAssigned: MOCK_REENTRIES.filter((r) => r.assignmentStatus === 'auto_assigned').length,
   };
 
   return (
@@ -176,14 +241,14 @@ export function ReferralManagement() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-6 gap-3">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-6">
         {[
           { label: '총 소개', value: stats.total, icon: Users, color: 'text-gray-600' },
           { label: '전환 완료', value: stats.converted, icon: UserPlus, color: 'text-emerald-600' },
           { label: '전환율', value: `${stats.conversionRate}%`, icon: TrendingUp, color: 'text-blue-600' },
           { label: 'Same-owner율', value: `${stats.sameOwnerRate}%`, icon: UserCheck, color: 'text-purple-600' },
-          { label: '미배정', value: stats.pendingAssignment, icon: AlertTriangle, color: 'text-rose-600' },
-          { label: '리워드', value: stats.rewardsGiven, icon: Gift, color: 'text-amber-600' },
+          { label: '재유입', value: stats.reentries, icon: Repeat, color: 'text-violet-600' },
+          { label: 'S4 자동배정', value: stats.autoAssigned, icon: RotateCcw, color: 'text-amber-600' },
         ].map((stat) => (
           <div key={stat.label} className="rounded-xl border border-gray-200 bg-white p-3">
             <div className="flex items-center gap-1.5">
@@ -201,6 +266,7 @@ export function ReferralManagement() {
           { key: 'referrals' as const, label: '소개 관리', icon: Users },
           { key: 'journey' as const, label: 'R 여정 현황', icon: ArrowRight },
           { key: 'family' as const, label: '가족 연동', icon: Heart },
+          { key: 'reentry' as const, label: '재유입', icon: Repeat },
         ]).map(tab => (
           <button
             key={tab.key}
@@ -354,6 +420,7 @@ export function ReferralManagement() {
               <span className="flex items-center gap-1"><span className="w-3 h-0.5 bg-gray-300 line-through" /> S4 선별/배정 스킵</span>
               <span className="flex items-center gap-1"><span className="w-3 h-0.5 bg-gray-300 line-through" /> S5-S6 TM 스킵</span>
               <span className="flex items-center gap-1"><span className="w-2 h-2 rounded bg-purple-200" /> Same-owner 자동배정</span>
+              <span className="flex items-center gap-1"><RotateCcw className="h-3 w-3 text-violet-400" /> R14 재유입 시 S4 자동배정</span>
             </div>
           </div>
 
@@ -397,6 +464,137 @@ export function ReferralManagement() {
                 ))}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {/* Tab: 재유입 */}
+      {activeTab === 'reentry' && (
+        <div className="space-y-4">
+          <div className="rounded-xl border border-gray-200 bg-white p-6">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <h2 className="text-sm font-semibold text-gray-900">R14 재유입 → S4 자동배정</h2>
+                <p className="mt-1 text-xs text-gray-500">
+                  완료된 여정 고객이 다시 유입되면 이전 여정과 연결해 S4 선별/배정 단계로 바로 복귀시킵니다.
+                </p>
+              </div>
+              <div className="rounded-lg bg-violet-50 px-3 py-2 text-xs font-medium text-violet-700">
+                이전 여정 연결 + 기존 담당자 우선 배정
+              </div>
+            </div>
+
+            <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-4">
+              {[
+                { label: '재유입 고객', value: `${MOCK_REENTRIES.length}건`, tone: 'text-gray-900' },
+                {
+                  label: '자동배정완료',
+                  value: `${MOCK_REENTRIES.filter((r) => r.assignmentStatus === 'auto_assigned').length}건`,
+                  tone: 'text-emerald-600',
+                },
+                {
+                  label: '수동배정필요',
+                  value: `${MOCK_REENTRIES.filter((r) => r.assignmentStatus === 'manual_required').length}건`,
+                  tone: 'text-rose-600',
+                },
+                { label: '이전 여정 연결률', value: '100%', tone: 'text-violet-600' },
+              ].map((item) => (
+                <div key={item.label} className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+                  <div className="text-xs text-gray-500">{item.label}</div>
+                  <div className={clsx('mt-2 text-2xl font-bold', item.tone)}>{item.value}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
+            <div className="border-b border-gray-200 bg-gray-50 px-4 py-3">
+              <h3 className="text-sm font-semibold text-gray-900">재유입 고객 추적</h3>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200 text-xs">
+                <thead className="bg-gray-50">
+                  <tr>
+                    {['고객명', '이전여정ID', '이전완료일', '재유입일', '재유입경로', '현재스텝', '배정상태', '담당자'].map((header) => (
+                      <th key={header} className="px-3 py-2.5 text-left font-medium text-gray-500">
+                        {header}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {MOCK_REENTRIES.map((reentry) => {
+                    const cfg = REENTRY_STATUS_CONFIG[reentry.assignmentStatus];
+                    return (
+                      <tr key={reentry.id} className="hover:bg-gray-50">
+                        <td className="px-3 py-2.5 font-medium text-gray-900">{reentry.customerName}</td>
+                        <td className="px-3 py-2.5 text-gray-500">{reentry.previousJourneyId}</td>
+                        <td className="px-3 py-2.5 text-gray-500">{reentry.previousCompletedAt}</td>
+                        <td className="px-3 py-2.5 text-gray-500">{reentry.reentryDate}</td>
+                        <td className="px-3 py-2.5">
+                          <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-600">{reentry.source}</span>
+                        </td>
+                        <td className="px-3 py-2.5 font-bold text-violet-600">{reentry.currentStep}</td>
+                        <td className="px-3 py-2.5">
+                          <span className={clsx('rounded-full px-2 py-1 font-medium', cfg.bg, cfg.color)}>
+                            {cfg.label}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2.5 text-gray-600">{reentry.assignedOwner}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-gray-200 bg-white p-5">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-gray-900">S4 자동배정 액션</h3>
+              <span className="text-[10px] text-gray-400">R14 재유입 패널 확장</span>
+            </div>
+
+            <div className="mt-4 space-y-3">
+              {MOCK_REENTRIES.map((reentry) => {
+                const cfg = REENTRY_STATUS_CONFIG[reentry.assignmentStatus];
+                return (
+                  <div key={`${reentry.id}-action`} className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+                    <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium text-gray-900">{reentry.customerName}</span>
+                          <span className={clsx('rounded-full px-2 py-1 text-[10px] font-medium', cfg.bg, cfg.color)}>
+                            {cfg.label}
+                          </span>
+                        </div>
+                        <p className="mt-1 text-xs text-gray-500">
+                          이전 여정 {reentry.previousJourneyId} 완료 후 {reentry.source} 경로로 재유입
+                        </p>
+                        <p className="mt-1 text-xs text-gray-600">{reentry.note}</p>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        {reentry.assignmentStatus === 'auto_assigned' && (
+                          <button className="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-bold text-white hover:bg-emerald-700">
+                            S4 자동배정 완료
+                          </button>
+                        )}
+                        {reentry.assignmentStatus === 'manual_required' && (
+                          <button className="rounded-lg bg-rose-600 px-3 py-2 text-xs font-bold text-white hover:bg-rose-700">
+                            수동 검토 필요
+                          </button>
+                        )}
+                        {reentry.assignmentStatus === 'pending' && (
+                          <button className="rounded-lg bg-violet-600 px-3 py-2 text-xs font-bold text-white hover:bg-violet-700">
+                            S4 자동배정 실행
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </div>
       )}

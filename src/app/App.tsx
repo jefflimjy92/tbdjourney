@@ -35,6 +35,7 @@ import { Aftercare } from './pages/payment/Aftercare';
 import { ReferralManagement } from './pages/growth/ReferralManagement';
 import { VocManagement } from './pages/cs/VocManagement';
 import { ComplianceDashboard } from './pages/compliance/ComplianceDashboard';
+import { AdminOperations } from './pages/admin';
 import { SimpleClaimWorkflow } from './pages/simpleClaims/SimpleClaimWorkflow';
 import { Toaster } from 'sonner';
 import { JourneyProvider } from '@/app/journey/JourneyContext';
@@ -151,6 +152,7 @@ function AppShell() {
       // CS / VOC / 준법
       case 'voc': return <VocManagement />;
       case 'compliance': return <ComplianceDashboard />;
+      case 'admin-operations': return <AdminOperations />;
 
       case 'dropoff': return <DropOffLogs />;
       case 'daily-report': return <DailyReport />;
@@ -193,6 +195,7 @@ function AppShell() {
       case 'simple-claims': return '간편청구 워크플로우 (Q1-Q9)';
       case 'voc': return 'CS / VOC 관리';
       case 'compliance': return '준법 / 개인정보 대시보드';
+      case 'admin-operations': return '관리업무 운영';
       case 'dropoff': return '이탈 사유 분석 (Read-only)';
       case 'daily-report': return '일일 보고서';
       case 'documents': return '서류 및 동의서 관리';
@@ -262,4 +265,3 @@ function AppShell() {
       </div>
   );
 }
-

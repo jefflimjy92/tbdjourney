@@ -40,6 +40,7 @@ export type NavItem =
   | 'simple-claims'
   | 'voc'
   | 'compliance'
+  | 'admin-operations'
   | 'dropoff'
   | 'daily-report'
   | 'documents'
@@ -131,6 +132,7 @@ export const FULL_NAV_SECTIONS: NavMenuSection[] = [
   { id: 'simple-claims', label: '간편청구', icon: 'Zap', navItem: 'simple-claims' },
   { id: 'voc', label: 'CS / VOC', icon: 'MessageSquare', navItem: 'voc' },
   { id: 'compliance', label: '준법/개인정보', icon: 'Shield', navItem: 'compliance' },
+  { id: 'admin-operations', label: '관리업무', icon: 'Briefcase', navItem: 'admin-operations' },
   { id: 'dropoff', label: '이탈 로그', icon: 'ScrollText', navItem: 'dropoff' },
   { id: 'daily-report', label: '일일 보고서', icon: 'BarChart3', navItem: 'daily-report' },
   { id: 'documents', label: '문서 관리', icon: 'Files', navItem: 'documents' },

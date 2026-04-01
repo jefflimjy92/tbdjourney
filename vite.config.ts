@@ -8,10 +8,24 @@ export default defineConfig({
     react(),
     tailwindcss(),
   ],
+  build: {
+    reportCompressedSize: false,
+  },
   resolve: {
-    alias: {
-      // Alias @ to the src directory
-      "@": path.resolve(__dirname, "./src"),
-    },
+    alias: [
+      {
+        find: /^recharts$/,
+        replacement: path.resolve(__dirname, "./src/app/vendor/recharts.ts"),
+      },
+      {
+        find: /^lucide-react$/,
+        replacement: path.resolve(__dirname, "./src/app/vendor/lucide-react.ts"),
+      },
+      {
+        // Alias @ to the src directory
+        find: "@",
+        replacement: path.resolve(__dirname, "./src"),
+      },
+    ],
   },
 });
