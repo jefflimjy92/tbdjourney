@@ -8,6 +8,15 @@ export default defineConfig({
     react(),
     tailwindcss(),
   ],
+  server: {
+    watch: {
+      ignored: ['**/.omc/**', '**/.omx/**', '**/.bkit/**', '**/tmp-*'],
+      awaitWriteFinish: {
+        stabilityThreshold: 200,
+        pollInterval: 50,
+      },
+    },
+  },
   build: {
     reportCompressedSize: false,
   },
