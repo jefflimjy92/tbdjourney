@@ -7,3 +7,10 @@ dist/
 .playwright-cli/
 output/
 test-results/
+.bkit/
+.claude/
+.omc/
+.omx/
+designs/
+tmp-home.png
+tmp-import-test.html
