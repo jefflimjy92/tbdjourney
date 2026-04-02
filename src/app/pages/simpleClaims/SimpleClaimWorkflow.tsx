@@ -250,7 +250,11 @@ export function SimpleClaimWorkflow() {
                       <FileText size={16} />
                       {document}
                     </div>
-                    <button type="button" className="inline-flex items-center gap-2 text-xs font-semibold text-slate-600">
+                    <button
+                      type="button"
+                      onClick={() => toast('문서 다운로드는 준비 중입니다')}
+                      className="inline-flex items-center gap-2 text-xs font-semibold text-slate-600"
+                    >
                       <Download size={14} />
                       다운로드
                     </button>

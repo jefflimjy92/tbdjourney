@@ -205,18 +205,30 @@ function resolveMeetingStatus(
       return { status: 'contract-completed' as MeetingScheduleStatus, statusCode: detailCode, statusLabel: '계약완료' };
     case 'followup-2nd-meeting':
       return { status: 'followup' as MeetingScheduleStatus, statusCode: detailCode, statusLabel: '2차 미팅 예정' };
-    case 'followup-in-progress':
+    case 'prospect':
       return { status: 'followup' as MeetingScheduleStatus, statusCode: detailCode, statusLabel: '후속 진행' };
-    case 'meeting-cancelled':
+    case 'pre-meeting-cancel':
       return { status: 'cancelled' as MeetingScheduleStatus, statusCode: detailCode, statusLabel: '취소' };
-    case 'no-show':
+    case 'final-absent':
       return { status: 'noshow' as MeetingScheduleStatus, statusCode: detailCode, statusLabel: '노쇼' };
-    case 'on-site-impossible':
+    case 'post-meeting-impossible':
       return { status: 'impossible' as MeetingScheduleStatus, statusCode: detailCode, statusLabel: '현장불가' };
     case 'contract-failed':
       return { status: 'impossible' as MeetingScheduleStatus, statusCode: detailCode, statusLabel: '계약불가' };
-    case 'uw-rejected':
+    case 'pre-meeting-impossible':
       return { status: 'impossible' as MeetingScheduleStatus, statusCode: detailCode, statusLabel: '심사거절' };
+    case 'intake-confirmed':
+      return { status: 'scheduled' as MeetingScheduleStatus, statusCode: detailCode, statusLabel: '접수 확인' };
+    case 'absent':
+      return { status: 'noshow' as MeetingScheduleStatus, statusCode: detailCode, statusLabel: '결석' };
+    case 'standby':
+      return { status: 'scheduled' as MeetingScheduleStatus, statusCode: detailCode, statusLabel: '대기' };
+    case 'second-meeting':
+      return { status: 'followup' as MeetingScheduleStatus, statusCode: detailCode, statusLabel: '2차 미팅' };
+    case 'feedback-done':
+      return { status: 'followup' as MeetingScheduleStatus, statusCode: detailCode, statusLabel: '피드백 완료' };
+    case 'contract-delay':
+      return { status: 'followup' as MeetingScheduleStatus, statusCode: detailCode, statusLabel: '계약 지연' };
     case 'withdrawn':
       return { status: 'impossible' as MeetingScheduleStatus, statusCode: detailCode, statusLabel: '철회' };
     case 'meeting-confirmed':

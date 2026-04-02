@@ -1,6 +1,5 @@
-import React, { useState, useCallback } from 'react';
-import { useDropzone } from 'react-dropzone';
-import { Upload, FileText, X, Paperclip, CheckCircle2, AlertCircle } from 'lucide-react';
+import React from 'react';
+import { AlertCircle, CheckCircle2, FileText, Paperclip, Upload, X } from 'lucide-react';
 import clsx from 'clsx';
 
 export interface FileAttachment {
@@ -12,132 +11,156 @@ export interface FileAttachment {
   status: 'uploading' | 'completed' | 'error';
 }
 
-interface FileAttachmentSectionProps {
-  initialFiles?: FileAttachment[];
-  onFilesChange?: (files: FileAttachment[]) => void;
+export interface FileSlot {
+  id: string;
+  label: string;
+  required: boolean;
+  file: FileAttachment | null;
 }
 
-export function FileAttachmentSection({ initialFiles, onFilesChange }: FileAttachmentSectionProps = {}) {
-  const [files, setFiles] = useState<FileAttachment[]>(initialFiles || []);
+interface FileAttachmentSectionProps {
+  slots: FileSlot[];
+  onSlotFileChange: (slotId: string, file: FileAttachment | null) => void;
+  checkItems?: {
+    id: string;
+    label: string;
+    icon: React.ReactNode;
+    checked: boolean;
+    onChange: (value: boolean) => void;
+  }[];
+}
 
-  // Sync files to parent
-  React.useEffect(() => {
-    onFilesChange?.(files);
-  }, [files, onFilesChange]);
+function formatSize(bytes: number) {
+  if (!bytes) return '0 KB';
+  const kb = bytes / 1024;
+  if (kb < 1024) return `${kb.toFixed(0)} KB`;
+  return `${(kb / 1024).toFixed(2)} MB`;
+}
 
-  const onDrop = useCallback((acceptedFiles: File[]) => {
-    const newFiles = acceptedFiles.map(file => ({
-      id: Math.random().toString(36).substring(7),
-      name: file.name,
-      size: file.size,
-      type: file.type,
-      progress: 0,
-      status: 'uploading' as const
-    }));
-
-    setFiles(prev => [...prev, ...newFiles]);
-
-    // Simulate upload progress
-    newFiles.forEach(file => {
-      let progress = 0;
-      const interval = setInterval(() => {
-        progress += 10;
-        setFiles(currentFiles => 
-          currentFiles.map(f => {
-            if (f.id === file.id) {
-              const newProgress = Math.min(progress, 100);
-              return {
-                ...f,
-                progress: newProgress,
-                status: newProgress === 100 ? 'completed' : 'uploading'
-              };
-            }
-            return f;
-          })
-        );
-
-        if (progress >= 100) {
-          clearInterval(interval);
-        }
-      }, 300);
-    });
-  }, []);
-
-  const removeFile = (id: string) => {
-    setFiles(prev => prev.filter(f => f.id !== id));
+function toAttachment(file: File): FileAttachment {
+  return {
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    name: file.name,
+    size: file.size,
+    type: file.type,
+    progress: 100,
+    status: 'completed',
   };
+}
 
-  const { getRootProps, getInputProps, isDragActive } = useDropzone({ onDrop });
-
-  const formatSize = (bytes: number) => {
-    if (bytes === 0) return '0 Bytes';
-    const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-  };
-
+export function FileAttachmentSection({
+  slots,
+  onSlotFileChange,
+  checkItems = [],
+}: FileAttachmentSectionProps) {
   return (
     <div className="space-y-3">
       <p className="text-[11px] font-bold text-[#62748e] tracking-[0.06px] uppercase flex items-center gap-2">
         <Paperclip size={12} />
-        첨부 파일 (Evidence)
+        첨부 파일 및 인계 확인
       </p>
 
-      <div 
-        {...getRootProps()} 
-        className={clsx(
-          "border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-colors",
-          isDragActive 
-            ? "border-blue-400 bg-blue-50" 
-            : "border-slate-200 hover:border-slate-300 hover:bg-slate-50"
-        )}
-      >
-        <input {...getInputProps()} />
-        <div className="flex flex-col items-center gap-2">
-          <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-500">
-            <Upload size={20} />
-          </div>
-          <div className="space-y-1">
-            <p className="text-xs font-bold text-slate-700">
-              파일을 드래그하거나 클릭하여 업로드
-            </p>
-            <p className="text-[10px] text-slate-400">
-              이미지(JPG, PNG), PDF, 문서 파일 (최대 10MB)
-            </p>
-          </div>
-        </div>
-      </div>
-
-      {files.length > 0 && (
+      <div className="space-y-3 rounded-lg border border-[#e2e8f0] bg-[#f8fafc] p-3">
         <div className="space-y-2">
-          {files.map((file) => (
-            <div key={file.id} className="bg-white border border-slate-200 rounded-lg p-3 flex items-center gap-3 group hover:border-slate-300 transition-colors">
-              <div className="w-8 h-8 rounded bg-slate-100 flex items-center justify-center text-slate-500 shrink-0">
-                <FileText size={16} />
-              </div>
-              
-              <div className="flex-1 min-w-0">
-                <p className="text-xs font-bold text-slate-700 truncate">{file.name}</p>
-                <p className="text-[10px] text-slate-400 font-medium mt-0.5">{formatSize(file.size)}</p>
-              </div>
+          {slots.map((slot) => (
+            <div key={slot.id} className="rounded-lg border border-slate-200 bg-white p-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <p className="text-xs font-bold text-slate-700">{slot.label}</p>
+                    {slot.required && (
+                      <span
+                        className={clsx(
+                          'rounded-full px-1.5 py-0.5 text-[9px] font-bold border',
+                          slot.file
+                            ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                            : 'border-rose-200 bg-rose-50 text-rose-600',
+                        )}
+                      >
+                        {slot.file ? '첨부됨' : '필수'}
+                      </span>
+                    )}
+                  </div>
+                  {slot.file ? (
+                    <div className="mt-2 flex items-center gap-2 text-xs text-slate-600">
+                      <div className="flex h-8 w-8 items-center justify-center rounded bg-slate-100 text-slate-500">
+                        <FileText size={15} />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="truncate font-semibold text-slate-700">{slot.file.name}</p>
+                        <p className="text-[10px] text-slate-400">{formatSize(slot.file.size)}</p>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="mt-2 text-[11px] text-slate-400">아직 업로드된 파일이 없습니다.</p>
+                  )}
+                </div>
 
-              <button 
-                onClick={() => removeFile(file.id)}
-                className="text-slate-400 hover:text-red-500 transition-colors"
-              >
-                <X size={16} />
-              </button>
+                <div className="flex shrink-0 items-center gap-1.5">
+                  <label
+                    htmlFor={`file-slot-${slot.id}`}
+                    className="inline-flex h-8 cursor-pointer items-center gap-1 rounded border border-slate-300 bg-slate-50 px-2.5 text-[11px] font-bold text-slate-700 hover:bg-slate-100"
+                  >
+                    <Upload size={12} />
+                    {slot.file ? '변경' : '업로드'}
+                  </label>
+                  <input
+                    id={`file-slot-${slot.id}`}
+                    type="file"
+                    className="hidden"
+                    onChange={(event) => {
+                      const nextFile = event.target.files?.[0];
+                      onSlotFileChange(slot.id, nextFile ? toAttachment(nextFile) : null);
+                      event.currentTarget.value = '';
+                    }}
+                  />
+                  {slot.file && (
+                    <button
+                      type="button"
+                      onClick={() => onSlotFileChange(slot.id, null)}
+                      className="inline-flex h-8 items-center justify-center rounded border border-slate-200 bg-white px-2 text-slate-400 hover:text-rose-500"
+                    >
+                      <X size={14} />
+                    </button>
+                  )}
+                </div>
+              </div>
             </div>
           ))}
         </div>
-      )}
-      
-      {/* Supabase Storage Recommendation Note (Hidden for UI only, but ready for backend integration) */}
-      {/* <div className="text-[10px] text-slate-400 flex items-center gap-1.5 px-1">
-        <AlertCircle size={10} />
-        <span>Files will be securely stored in Supabase Storage</span>
-      </div> */}
+
+        {checkItems.length > 0 && (
+          <div className="space-y-2 border-t border-slate-200 pt-3">
+            {checkItems.map((item) => (
+              <label
+                key={item.id}
+                className={clsx(
+                  'flex items-center gap-2 rounded border px-3 py-2.5 transition-all cursor-pointer',
+                  item.checked
+                    ? 'border-emerald-200 bg-emerald-50'
+                    : 'border-slate-200 bg-white hover:border-slate-300',
+                )}
+              >
+                <input
+                  type="checkbox"
+                  checked={item.checked}
+                  onChange={(event) => item.onChange(event.target.checked)}
+                  className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                />
+                {item.icon}
+                <span className={clsx('flex-1 text-xs font-medium', item.checked ? 'text-emerald-700' : 'text-slate-600')}>
+                  {item.label}
+                </span>
+                {item.checked ? (
+                  <CheckCircle2 size={12} className="text-emerald-500" />
+                ) : (
+                  <AlertCircle size={12} className="text-slate-300" />
+                )}
+              </label>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

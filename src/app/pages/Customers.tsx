@@ -566,7 +566,7 @@ function MembersTable({
                               <button 
                                  className="size-7 rounded border border-slate-200 text-slate-400 hover:text-[#1e293b] hover:border-[#1e293b] flex items-center justify-center transition-all bg-white"
                                  title="수정하기"
-                                 onClick={(e) => { e.stopPropagation(); }}
+                                 onClick={(e) => { e.stopPropagation(); onMemberClick(member); }}
                               >
                                  <Edit size={14} />
                               </button>

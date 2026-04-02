@@ -16,25 +16,9 @@ interface MeetingCenterTabsProps {
   renderContractInfo: () => React.ReactNode;
   renderCustomerInput: () => React.ReactNode;
   renderHealthCheck?: () => React.ReactNode;
+  renderConsultationChecklist: () => React.ReactNode;
   renderMeetingCompleteTab?: () => React.ReactNode;
   renderContractRegistrationTab?: () => React.ReactNode;
-  consultationCheckData: {
-    disposition: string;
-    trustLevel: string;
-    bestTime: string;
-    decisionMaker: string;
-    traitNote: string;
-    companion: string;
-    insuranceType: string;
-    monthlyPremium: string;
-    paymentStatus: string;
-    contractor: string;
-    joinPath: string;
-    trafficAccident: string;
-    surgery: string;
-    criticalDisease: string;
-    medication: string;
-  };
 }
 
 const TABS = [
@@ -54,9 +38,9 @@ export function MeetingCenterTabs({
   renderContractInfo,
   renderCustomerInput,
   renderHealthCheck,
+  renderConsultationChecklist,
   renderMeetingCompleteTab,
   renderContractRegistrationTab,
-  consultationCheckData,
 }: MeetingCenterTabsProps) {
   return (
     <div className="flex flex-col h-full">
@@ -89,11 +73,11 @@ export function MeetingCenterTabs({
                 customerProfileProps={{}}
                 contractInfoProps={{}}
                 customerInputProps={{}}
-                consultationCheckData={consultationCheckData}
                 renderProfileSummary={renderProfileSummary}
                 renderContractInfo={renderContractInfo}
                 renderCustomerInput={renderCustomerInput}
                 renderHealthCheck={renderHealthCheck}
+                renderConsultationChecklist={renderConsultationChecklist}
               />
             </div>
           )}

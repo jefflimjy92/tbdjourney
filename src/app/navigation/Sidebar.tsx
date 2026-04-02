@@ -5,6 +5,7 @@
  */
 import React, { useEffect, useState } from 'react';
 import {
+  ClipboardList,
   Users,
   Headphones,
   CalendarDays,
@@ -30,11 +31,12 @@ import {
 } from 'lucide-react';
 import clsx from 'clsx';
 import { useRole, ROLE_LABELS, ROLE_GROUPS } from '@/app/auth/RoleContext';
-import { getNavSectionsForRole, type NavItem, type NavMenuSection } from './navConfig';
+import { getNavSectionsForRole, type AppTab, type NavItem, type NavMenuSection } from './navConfig';
 import type { TeamRole } from '@/app/journey/types';
 
 const ICON_MAP: Record<string, React.ReactNode> = {
   PieChart: <PieChart size={20} />,
+  ClipboardList: <ClipboardList size={20} />,
   Users: <Users size={20} />,
   Database: <Database size={20} />,
   ListTodo: <ListTodo size={20} />,
@@ -56,7 +58,7 @@ const ICON_MAP: Record<string, React.ReactNode> = {
 };
 
 interface SidebarProps {
-  activeTab: NavItem;
+  activeTab: AppTab;
   isSidebarOpen: boolean;
   onTabChange: (tab: NavItem) => void;
   onToggleSidebar: () => void;
@@ -66,12 +68,15 @@ export function Sidebar({ activeTab, isSidebarOpen, onTabChange, onToggleSidebar
   const { currentRole, setRole, roleLabel } = useRole();
   const [roleDropdownOpen, setRoleDropdownOpen] = useState(false);
   const sections = getNavSectionsForRole(currentRole);
+  const canOverrideRole = import.meta.env.DEV;
 
   return (
     <aside
       className={clsx(
-        'flex flex-col bg-white border-r border-slate-200 transition-all duration-300 z-20 shrink-0',
-        isSidebarOpen ? 'w-60' : 'w-16',
+        'fixed inset-y-0 left-0 z-20 flex h-screen flex-col border-r border-slate-200 bg-white transition-all duration-300 lg:static lg:inset-auto lg:shrink-0',
+        isSidebarOpen
+          ? 'translate-x-0 w-72 shadow-xl lg:w-60 lg:shadow-none'
+          : '-translate-x-full w-72 lg:w-16 lg:translate-x-0',
       )}
     >
       {/* Logo Area */}
@@ -85,7 +90,7 @@ export function Sidebar({ activeTab, isSidebarOpen, onTabChange, onToggleSidebar
       </div>
 
       {/* Role Selector */}
-      {isSidebarOpen && (
+      {isSidebarOpen && canOverrideRole && (
         <div className="px-3 pt-3 pb-1 relative">
           <button
             onClick={() => setRoleDropdownOpen(!roleDropdownOpen)}
@@ -121,6 +126,15 @@ export function Sidebar({ activeTab, isSidebarOpen, onTabChange, onToggleSidebar
         </div>
       )}
 
+      {isSidebarOpen && !canOverrideRole && (
+        <div className="px-3 pt-3 pb-1">
+          <div className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+            <span className="text-xs text-slate-500">역할:</span>
+            <span className="ml-2 font-medium text-[#1e293b]">{roleLabel}</span>
+          </div>
+        </div>
+      )}
+
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto py-4 custom-scrollbar">
         <ul className="space-y-0.5 px-3">
@@ -144,7 +158,6 @@ export function Sidebar({ activeTab, isSidebarOpen, onTabChange, onToggleSidebar
                     isOpen={isSidebarOpen}
                     activeIds={section.children.map((c) => c.navItem)}
                     currentTab={activeTab}
-                    onParentClick={() => onTabChange(section.children![0].navItem)}
                     onToggle={onToggleSidebar}
                   >
                     {section.children.map((child) => (
@@ -230,16 +243,14 @@ function SidebarGroup({
   activeIds,
   currentTab,
   children,
-  onParentClick,
   onToggle,
 }: {
   icon: React.ReactNode;
   label: string;
   isOpen: boolean;
   activeIds: string[];
-  currentTab: string;
+  currentTab: AppTab;
   children: React.ReactNode;
-  onParentClick: () => void;
   onToggle: () => void;
 }) {
   const isActiveGroup = activeIds.includes(currentTab);
@@ -256,11 +267,12 @@ function SidebarGroup({
   };
 
   const handleMainClick = () => {
-    onParentClick();
     if (!isOpen) {
       onToggle();
       setExpanded(true);
+      return;
     }
+    setExpanded((prev) => !prev);
   };
 
   return (

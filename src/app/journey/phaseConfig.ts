@@ -40,7 +40,6 @@ export const PHASE_DEFINITIONS: PhaseDefinition[] = [
 
 export const REFUND_STEP_SEQUENCE: RefundStep[] = [
   'S1_inflow',
-  'S2_hira_lookup',
   'S3_refund_apply',
   'S4_screening',
   'S5_first_tm',
@@ -62,7 +61,6 @@ export const REFUND_STEP_SEQUENCE: RefundStep[] = [
 
 export const REFERRAL_STEP_SEQUENCE: ReferralStep[] = [
   'R1_referral_inflow',
-  'R2_hira_lookup',
   'R3_refund_apply',
   'R4_pre_analysis',        // Same-owner 배정, 선별/TM 스킵
   'R5_meeting_execution',
@@ -96,7 +94,6 @@ export const SIMPLE_CLAIM_STEP_SEQUENCE: SimpleClaimStep[] = [
 export const STEP_TO_PHASE: Record<JourneyStep, JourneyPhase> = {
   // 3년환급
   S1_inflow: 'inflow',
-  S2_hira_lookup: 'inquiry',
   S3_refund_apply: 'inquiry',
   S4_screening: 'classification',
   S5_first_tm: 'tm',
@@ -114,7 +111,6 @@ export const STEP_TO_PHASE: Record<JourneyStep, JourneyPhase> = {
   S17_reentry: 'growth',
   // 소개 (선별/TM 스킵, Same-owner 자동배정)
   R1_referral_inflow: 'inflow',
-  R2_hira_lookup: 'inquiry',
   R3_refund_apply: 'inquiry',
   R4_pre_analysis: 'meeting',          // 사전분석 (선별/TM 스킵 → 바로 미팅준비)
   R5_meeting_execution: 'meeting',
@@ -144,7 +140,6 @@ export const STEP_TO_PHASE: Record<JourneyStep, JourneyPhase> = {
 export const STEP_PRIMARY_TEAM: Record<JourneyStep, TeamRole> = {
   // 3년환급
   S1_inflow: 'admin',
-  S2_hira_lookup: 'call_lead',       // Fix: 건보조회는 콜리드 관리
   S3_refund_apply: 'call_lead',      // Fix: 환급신청은 콜리드 관리
   S4_screening: 'call_lead',
   S5_first_tm: 'call_member',
@@ -162,7 +157,6 @@ export const STEP_PRIMARY_TEAM: Record<JourneyStep, TeamRole> = {
   S17_reentry: 'admin',
   // 소개 (Same-owner: 원래 담당자 유지)
   R1_referral_inflow: 'admin',
-  R2_hira_lookup: 'call_lead',
   R3_refund_apply: 'call_lead',
   R4_pre_analysis: 'sales_member',     // Same-owner 자동배정
   R5_meeting_execution: 'sales_member',
@@ -192,7 +186,6 @@ export const STEP_PRIMARY_TEAM: Record<JourneyStep, TeamRole> = {
 export const STEP_LABELS: Record<JourneyStep, string> = {
   // 3년환급
   S1_inflow: '유입',
-  S2_hira_lookup: '건강보험 조회',
   S3_refund_apply: '환급 신청',
   S4_screening: '선별/배정',
   S5_first_tm: '1차 TM',
@@ -210,7 +203,6 @@ export const STEP_LABELS: Record<JourneyStep, string> = {
   S17_reentry: '재유입',
   // 소개
   R1_referral_inflow: '소개 유입',
-  R2_hira_lookup: '건강보험 조회',
   R3_refund_apply: '환급 신청',
   R4_pre_analysis: '사전분석 (자동배정)',
   R5_meeting_execution: '미팅 진행',
@@ -277,9 +269,6 @@ export const STEP_KPIS: StageKPI[] = [
   { stepCode: 'S1_inflow', name: '일일 유입수', metric: 'daily_inflow_count', target: '500', unit: '건', team: ['admin'] },
   { stepCode: 'S1_inflow', name: 'CPA', metric: 'cost_per_acquisition', target: '15000', unit: '원', team: ['admin'] },
   { stepCode: 'S1_inflow', name: 'ROAS', metric: 'return_on_ad_spend', target: '300', unit: '%', team: ['admin'] },
-  // Phase 2: 조회
-  { stepCode: 'S2_hira_lookup', name: '조회 완료율', metric: 'lookup_completion_rate', target: '85', unit: '%', team: ['call_lead'] },
-  { stepCode: 'S2_hira_lookup', name: '인증 완료율', metric: 'auth_completion_rate', target: '80', unit: '%', team: ['call_lead'] },
   // Phase 2: 신청
   { stepCode: 'S3_refund_apply', name: '조회→신청 전환율', metric: 'lookup_to_apply_rate', target: '60', unit: '%', team: ['call_lead'] },
   { stepCode: 'S3_refund_apply', name: '신청 이탈률', metric: 'apply_dropout_rate', target: '20', unit: '%', team: ['call_lead'] },

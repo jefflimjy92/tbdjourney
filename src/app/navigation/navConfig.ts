@@ -7,45 +7,66 @@ import type { TeamRole } from '@/app/journey/types';
 
 export type NavItem =
   | 'dashboard'
+  | 'requests'
   | 'customers'
   | 'leads'
-  | 'requests'
   | 'case-detail'
   | 'consultation'
-  | 'tm-first'
-  | 'tm-second'
-  | 'tm-checklist'
   | 'handoff'
-  | 'meeting-schedule'
   | 'meeting-all'
-  | 'meeting-refund'
-  | 'meeting-simple'
-  | 'meeting-pre-analysis'
-  | 'meeting-on-site'
-  | 'meeting-contract-close'
+  | 'meeting-schedule'
   | 'contracts'
   | 'claims-all'
-  | 'claims-refund'
-  | 'claims-simple'
-  | 'claims-issuance'
-  | 'claims-receipt'
-  | 'claims-unpaid'
-  | 'claims-doc-issuance'
-  | 'claims-final'
   | 'issuance-master'
-  | 'issuance-manager'
-  | 'issuance-staff'
-  | 'payment-confirm'
-  | 'aftercare'
-  | 'referral-management'
   | 'simple-claims'
-  | 'voc'
-  | 'compliance'
-  | 'admin-operations'
   | 'dropoff'
   | 'daily-report'
-  | 'documents'
   | 'settings';
+
+export const PROD_TAB_ITEMS = [
+  'dashboard',
+  'requests',
+  'customers',
+  'leads',
+  'case-detail',
+  'consultation',
+  'handoff',
+  'meeting-all',
+  'meeting-schedule',
+  'contracts',
+  'claims-all',
+  'simple-claims',
+  'issuance-master',
+  'daily-report',
+  'dropoff',
+  'settings',
+] as const satisfies readonly NavItem[];
+
+export const LEGACY_DEBUG_TAB_ITEMS = [
+  'tm-first',
+  'tm-second',
+  'tm-checklist',
+  'meeting-pre-analysis',
+  'meeting-on-site',
+  'meeting-contract-close',
+  'claims-receipt',
+  'claims-unpaid',
+  'claims-doc-issuance',
+  'claims-final',
+  'claims-issuance',
+  'issuance-manager',
+  'issuance-staff',
+  'payment-confirm',
+  'aftercare',
+  'referral-management',
+  'voc',
+  'compliance',
+  'admin-operations',
+  'documents',
+] as const;
+
+export type LegacyDebugTabItem = (typeof LEGACY_DEBUG_TAB_ITEMS)[number];
+export type AppTab = NavItem | LegacyDebugTabItem;
 
 export interface NavMenuChild {
   navItem: NavItem;
@@ -62,23 +83,21 @@ export interface NavMenuSection {
 
 /** 전체 메뉴 구조 (관리자 기준, 2-depth 그룹) */
 export const FULL_NAV_SECTIONS: NavMenuSection[] = [
-  { id: 'dashboard', label: '대시보드', icon: 'PieChart', navItem: 'dashboard' },
-
-  // 고객 관리 그룹
+  // 고객 관리 (하위: 고객 관리 / 접수 관리)
   {
     id: 'customer-group',
     label: '고객 관리',
     icon: 'Users',
     children: [
-      { navItem: 'customers', label: '고객 목록' },
-      { navItem: 'requests', label: '처리 현황' },
+      { navItem: 'customers', label: '고객 관리' },
+      { navItem: 'requests', label: '접수 관리' },
     ],
   },
 
-  // 콜팀
+  // 상담팀 (기존 콜팀)
   {
     id: 'call-group',
-    label: '콜팀',
+    label: '상담팀',
     icon: 'Headphones',
     children: [
       { navItem: 'leads', label: 'DB 분류/배정' },
@@ -92,8 +111,8 @@ export const FULL_NAV_SECTIONS: NavMenuSection[] = [
     label: '영업팀',
     icon: 'Briefcase',
     children: [
-      { navItem: 'handoff', label: '미팅 인계' },
-      { navItem: 'meeting-all', label: '미팅' },
+      { navItem: 'handoff', label: '미팅 배정 관리' },
+      { navItem: 'meeting-all', label: '미팅 관리' },
       { navItem: 'meeting-schedule', label: '미팅 일정' },
       { navItem: 'contracts', label: '계약 목록' },
     ],
@@ -105,12 +124,13 @@ export const FULL_NAV_SECTIONS: NavMenuSection[] = [
     label: '청구팀',
     icon: 'FileCheck',
     children: [
-      { navItem: 'claims-all', label: '3년환급' },
+      { navItem: 'claims-all', label: '3년 환급' },
       { navItem: 'simple-claims', label: '간편청구' },
       { navItem: 'issuance-master', label: '서류발급' },
     ],
   },
 
+  { id: 'dashboard', label: '대시보드', icon: 'PieChart', navItem: 'dashboard' },
   { id: 'daily-report', label: '일일 보고서', icon: 'BarChart3', navItem: 'daily-report' },
   { id: 'dropoff', label: '이탈 로그', icon: 'ScrollText', navItem: 'dropoff' },
   { id: 'settings', label: '설정', icon: 'Settings', navItem: 'settings' },
@@ -118,12 +138,12 @@ export const FULL_NAV_SECTIONS: NavMenuSection[] = [
 
 /** 역할별 보이는 NavItem 목록 (그룹 내 개별 항목 수준 필터링) */
 const ROLE_VISIBLE_ITEMS: Record<TeamRole, NavItem[] | 'all'> = {
-  call_member:  ['dashboard', 'requests', 'consultation', 'daily-report'],
-  call_lead:    ['dashboard', 'requests', 'leads', 'consultation', 'daily-report'],
+  call_member:  ['dashboard', 'consultation', 'daily-report'],
+  call_lead:    ['dashboard', 'leads', 'consultation', 'daily-report'],
   sales_member: ['dashboard', 'meeting-all', 'meeting-schedule', 'contracts'],
-  sales_lead:   ['dashboard', 'customers', 'handoff', 'meeting-all', 'meeting-schedule', 'contracts', 'daily-report'],
-  claims_member:['dashboard', 'claims-all', 'simple-claims', 'issuance-master'],
-  claims_lead:  ['dashboard', 'customers', 'claims-all', 'simple-claims', 'issuance-master', 'daily-report'],
+  sales_lead:   ['dashboard', 'handoff', 'meeting-all', 'meeting-schedule', 'contracts', 'daily-report'],
+  claims_member: ['dashboard', 'claims-all', 'simple-claims', 'issuance-master'],
+  claims_lead:  ['dashboard', 'claims-all', 'simple-claims', 'issuance-master', 'daily-report'],
   cs:           ['dashboard', 'customers', 'requests', 'dropoff'],
   compliance:   ['dashboard', 'customers', 'requests', 'settings'],
   admin:        'all',

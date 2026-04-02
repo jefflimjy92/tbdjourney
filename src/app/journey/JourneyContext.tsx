@@ -1,6 +1,11 @@
 import React, { createContext, useCallback, useContext, useMemo, useState } from 'react';
-import { createInitialJourneys } from '@/app/journey/mockJourneys';
+import {
+  createInitialJourneys,
+  DEFAULT_CONSULTATION_DRAFT,
+  DEFAULT_MEETING_DRAFT,
+} from '@/app/journey/mockJourneys';
 import { computeJourney, canAdvanceStep, shouldSkipStep, getPhaseTransitionMessage } from '@/app/journey/rules';
+import { CUSTOMER_MASTER_DERIVED_MOCK } from '@/app/mockData/generated/customerMasterDerived.app';
 import type {
   AuditEvent,
   ConsultationDraft,
@@ -13,6 +18,18 @@ import type {
   VerificationState,
 } from '@/app/journey/types';
 import { STEP_TO_PHASE } from '@/app/journey/phaseConfig';
+
+type RequestRowSeed = (typeof CUSTOMER_MASTER_DERIVED_MOCK.requestRows)[number];
+type CustomerSeed = (typeof CUSTOMER_MASTER_DERIVED_MOCK.customers)[number];
+type MeetingSeed = (typeof CUSTOMER_MASTER_DERIVED_MOCK.meetingExecutionQueue)[number];
+
+const customerByName = new Map<string, CustomerSeed>(
+  CUSTOMER_MASTER_DERIVED_MOCK.customers.map((customer) => [customer.name, customer]),
+);
+
+const meetingByRequestId = new Map<string, MeetingSeed>(
+  CUSTOMER_MASTER_DERIVED_MOCK.meetingExecutionQueue.map((meeting) => [meeting.requestId, meeting]),
+);
 
 interface JourneyContextValue {
   journeys: Record<string, RequestJourney>;
@@ -54,6 +71,143 @@ function buildAudit(type: AuditEvent['type'], actor: string, message: string, to
   };
 }
 
+function mapJourneyType(type: string): RequestJourney['journeyType'] {
+  if (type.includes('간편')) return 'simple';
+  if (type.includes('소개')) return 'intro';
+  if (type.includes('가족')) return 'family';
+  return 'refund';
+}
+
+function mapJourneyStage(stage: string, status: string): RequestJourney['stage'] {
+  if (stage === '종결' || stage === '종료' || status.includes('완료') || status.includes('취소') || status.includes('노쇼')) {
+    return 'closed';
+  }
+  if (stage === '청구') return 'claims';
+  if (stage === '미팅') return 'meeting';
+  if (stage === '상담') return 'consultation';
+  return 'request';
+}
+
+function mapJourneyPhase(stage: string, status: string): RequestJourney['phase'] {
+  if (stage === '종결' || stage === '종료' || status.includes('완료') || status.includes('취소') || status.includes('노쇼')) {
+    return 'growth';
+  }
+  if (stage === '청구') {
+    return status.includes('지급') ? 'payment' : 'claims';
+  }
+  if (stage === '미팅') return 'meeting';
+  if (stage === '상담') return 'tm';
+  return 'inquiry';
+}
+
+function mapJourneyStep(journeyType: RequestJourney['journeyType'], phase: RequestJourney['phase']): JourneyStep {
+  if (journeyType === 'simple') {
+    switch (phase) {
+      case 'meeting':
+        return 'Q5_customer_confirm';
+      case 'claims':
+        return 'Q6_insurer_submit';
+      case 'payment':
+        return 'Q7_payment_tracking';
+      case 'growth':
+        return 'Q8_gap_detection';
+      case 'tm':
+        return 'Q3_first_claim_call';
+      default:
+        return 'Q2_identity_verify';
+    }
+  }
+
+  if (journeyType === 'intro') {
+    switch (phase) {
+      case 'meeting':
+        return 'R5_meeting_execution';
+      case 'claims':
+        return 'R7_claim_receipt';
+      case 'payment':
+        return 'R11_payment_confirm';
+      case 'growth':
+        return 'R13_referral_create';
+      default:
+        return 'R3_refund_apply';
+    }
+  }
+
+  switch (phase) {
+    case 'meeting':
+      return 'S8_meeting_execution';
+    case 'claims':
+      return 'S10_claim_receipt';
+    case 'payment':
+      return 'S14_payment_confirm';
+    case 'growth':
+      return 'S16_referral_push';
+    case 'tm':
+      return 'S5_first_tm';
+    case 'classification':
+      return 'S4_screening';
+    case 'inquiry':
+      return 'S3_refund_apply';
+    default:
+      return 'S1_inflow';
+  }
+}
+
+function buildFallbackJourneyFromRequestRow(request: RequestRowSeed): RequestJourney {
+  const journeyType = mapJourneyType(request.type);
+  const stage = mapJourneyStage(request.stage, request.status);
+  const phase = mapJourneyPhase(request.stage, request.status);
+  const step = mapJourneyStep(journeyType, phase);
+  const enteredAt = `${request.date} 09:00`;
+  const customer = customerByName.get(request.customer);
+  const meeting = meetingByRequestId.get(request.id);
+  const owner = meeting?.manager || request.manager || customer?.manager || '미배정';
+
+  return {
+    requestId: request.id,
+    customerName: request.customer,
+    customerPhone: meeting?.phone || customer?.phone || '-',
+    journeyType,
+    owner,
+    stage,
+    status: request.status,
+    slaLabel: '데이터 기준선 정합화 필요',
+    nextDueAt: enteredAt,
+    nextAction: '상세 입력 데이터가 없어 request 기반 fallback journey로 표시 중',
+    notificationState: 'pending',
+    currentStageStatus: {
+      stageId: stage,
+      statusCode: request.status,
+      statusLabel: request.status,
+      enteredAt,
+      enteredBy: owner,
+    },
+    missingRequirements: [],
+    documentRequirements: [],
+    integrationTasks: [],
+    auditTrail: [
+      buildAudit('note', 'System', 'request 기반 fallback journey를 생성했습니다.', 'warning'),
+    ],
+    consultationDraft: { ...DEFAULT_CONSULTATION_DRAFT },
+    meetingDraft: {
+      ...DEFAULT_MEETING_DRAFT,
+      assignedStaff: owner !== '미배정' ? owner : '',
+      assignedTeam: request.team ?? '',
+      meetingLocation: meeting?.location || customer?.address || '',
+      meetingConfirmed: request.status.includes('확정'),
+    },
+    phase,
+    step,
+    dbCategoryV2: journeyType === 'intro' ? 'referral' : 'possible',
+    stepHistory: [],
+  };
+}
+
+function buildFallbackJourney(requestId: string): RequestJourney | undefined {
+  const request = CUSTOMER_MASTER_DERIVED_MOCK.requestRows.find((row) => row.id === requestId);
+  return request ? buildFallbackJourneyFromRequestRow(request) : undefined;
+}
+
 export function JourneyProvider({ children }: { children: React.ReactNode }) {
   const [journeys, setJourneys] = useState<Record<string, RequestJourney>>(() => {
     const initial = createInitialJourneys().map(withComputed);
@@ -62,14 +216,19 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
 
   const patchJourney = useCallback((requestId: string, updater: (journey: RequestJourney) => RequestJourney) => {
     setJourneys((current) => {
-      const target = current[requestId];
+      const target = current[requestId] ?? buildFallbackJourney(requestId);
       if (!target) return current;
       const next = withComputed(updater(target));
       return { ...current, [requestId]: next };
     });
   }, []);
 
-  const getJourney = useCallback((requestId: string) => journeys[requestId], [journeys]);
+  const getJourney = useCallback((requestId: string) => {
+    const journey = journeys[requestId];
+    if (journey) return journey;
+    const fallbackJourney = buildFallbackJourney(requestId);
+    return fallbackJourney ? withComputed(fallbackJourney) : undefined;
+  }, [journeys]);
 
   const ensureJourney = useCallback((journey: RequestJourney) => {
     setJourneys((current) => {

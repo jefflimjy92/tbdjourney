@@ -300,7 +300,7 @@ function StepPlaceholder({
   return (
     <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-5">
       <div className="text-sm font-semibold text-slate-700">{title}</div>
-      <div className="mt-2 text-sm text-slate-500">상태: 준비중</div>
+      <div className="mt-2 text-sm text-slate-500">상태: 차기 범위에서 연결 예정</div>
       <Textarea readOnly value={description} className="mt-4 min-h-24 bg-white" />
     </div>
   );

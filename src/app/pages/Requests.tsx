@@ -19,7 +19,7 @@ import clsx from 'clsx';
 import { JourneyHeader } from '@/app/components/journey/JourneyHeader';
 import { JourneyRequirementPanel } from '@/app/components/journey/JourneyRequirementPanel';
 import { useJourneyStore } from '@/app/journey/JourneyContext';
-import { MOCK_DATA } from '@/app/mockData';
+import { CUSTOMER_MASTER_DERIVED_MOCK } from '@/app/mockData/generated/customerMasterDerived.app';
 import { ListPeriodControls } from '@/app/components/ListPeriodControls';
 import {
   filterRowsByPeriod,
@@ -37,7 +37,7 @@ import {
   SelectValue,
 } from '@/app/components/ui/select';
 
-const REQUESTS = MOCK_DATA.requestRows;
+const REQUESTS = CUSTOMER_MASTER_DERIVED_MOCK.requestRows;
 
 // Mock Process Data
 const PROCESS_STEPS = [
@@ -101,21 +101,8 @@ function resolveMockStep(request: RequestRow, index: number): RequestFlowStep {
   return REQUEST_FLOW_STEPS[index % REQUEST_FLOW_STEPS.length];
 }
 
-function getStageClassName(stage: string) {
-  switch (stage) {
-    case '접수':
-      return 'text-slate-500';
-    case '상담':
-      return 'text-blue-600';
-    case '미팅':
-      return 'text-violet-600';
-    case '청구':
-      return 'text-teal-600';
-    case '종결':
-      return 'text-emerald-600';
-    default:
-      return 'text-slate-400';
-  }
+function getStageClassName(_stage: string) {
+  return 'text-slate-600';
 }
 
 function getStatusBadgeClassName(status: string) {
@@ -313,12 +300,13 @@ function RequestList({ onSelect, requests }: { onSelect: (id: string) => void; r
   return (
     <div className="flex flex-col h-full bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
       {/* Header */}
-      <div className="px-6 py-4 border-b border-slate-200 flex justify-between items-center bg-white">
+      <div className="border-b border-slate-200 bg-white px-4 py-4 sm:px-6">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <h2 className="font-bold text-[#1e293b]">접수 현황 (All Requests)</h2>
           <p className="text-xs text-slate-500 mt-1">전체 접수건의 진행 단계 및 타임라인 조회</p>
         </div>
-        <div className="flex flex-wrap items-center justify-end gap-3">
+        <div className="flex w-full flex-wrap items-center gap-3 lg:w-auto lg:justify-end">
           <ListPeriodControls
             preset={periodPreset}
             range={periodRange}
@@ -327,7 +315,7 @@ function RequestList({ onSelect, requests }: { onSelect: (id: string) => void; r
             onEndDateChange={setCustomPeriodEndDate}
           />
           <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="w-[180px] bg-white">
+            <SelectTrigger className="w-full bg-white sm:w-[180px]">
               <SelectValue placeholder="전체 상태" />
             </SelectTrigger>
             <SelectContent>
@@ -339,17 +327,18 @@ function RequestList({ onSelect, requests }: { onSelect: (id: string) => void; r
               ))}
             </SelectContent>
           </Select>
-          <div className="flex items-center gap-2 px-3 py-2 bg-white border border-slate-300 rounded text-sm text-slate-600 hover:bg-slate-50 cursor-pointer transition-colors shadow-sm">
+          <div className="flex w-full items-center justify-center gap-2 rounded border border-slate-300 bg-white px-3 py-2 text-sm text-slate-600 shadow-sm transition-colors hover:bg-slate-50 sm:w-auto">
             <Filter size={16} /> 필터
           </div>
-          <button className="flex items-center gap-2 px-3 py-2 bg-[#1e293b] text-white rounded text-sm font-medium hover:bg-slate-800 transition-colors shadow-sm">
+          <button className="flex w-full items-center justify-center gap-2 rounded bg-[#1e293b] px-3 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-slate-800 sm:w-auto">
             <Plus size={16} /> 신규 접수
           </button>
         </div>
       </div>
+      </div>
 
       {/* Step Filter Tabs */}
-      <div className="px-6 pt-3 pb-0 border-b border-slate-200 bg-white flex gap-1 overflow-x-auto">
+      <div className="border-b border-slate-200 bg-white px-4 pt-3 pb-0 sm:px-6 flex gap-1 overflow-x-auto">
         {STEP_TABS.map(tab => (
           <button
             key={tab.key}
@@ -374,48 +363,43 @@ function RequestList({ onSelect, requests }: { onSelect: (id: string) => void; r
 
       {/* List Table */}
       <div className="flex-1 overflow-auto">
-        <table className="w-full text-sm text-left">
-          <thead className="text-xs text-slate-500 uppercase bg-slate-50/50 border-b border-slate-200 sticky top-0">
+        <table className="min-w-[820px] w-full text-sm text-left">
+          <thead className="bg-slate-50 border-b border-slate-200 sticky top-0 z-10">
             <tr>
-              <th className="px-6 py-3 font-medium">접수 ID</th>
-              <th className="px-6 py-3 font-medium">접수 유형</th>
-              <th className="px-6 py-3 font-medium">고객명</th>
-              <th className="px-6 py-3 font-medium">접수일</th>
-              <th className="px-6 py-3 font-medium">현재 단계</th>
-              <th className="px-6 py-3 font-medium">스텝</th>
-              <th className="px-6 py-3 font-medium">담당 영업직원</th>
-              <th className="px-6 py-3 font-medium">상태</th>
-              <th className="px-6 py-3 font-medium text-right">상세</th>
+              <th className="px-5 py-3 text-[11px] font-bold text-slate-500 uppercase tracking-wider">고객명</th>
+              <th className="px-5 py-3 text-[11px] font-bold text-slate-500 uppercase tracking-wider">접수ID</th>
+              <th className="px-5 py-3 text-[11px] font-bold text-slate-500 uppercase tracking-wider">접수일</th>
+              <th className="px-5 py-3 text-[11px] font-bold text-slate-500 uppercase tracking-wider">유형</th>
+              <th className="px-5 py-3 text-[11px] font-bold text-slate-500 uppercase tracking-wider">상태</th>
+              <th className="px-5 py-3 text-[11px] font-bold text-slate-500 uppercase tracking-wider">담당 직원</th>
+              <th className="px-5 py-3"></th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {filteredRequests.map((req) => (
-              <tr 
-                key={req.id} 
+              <tr
+                key={req.id}
                 className="hover:bg-slate-50 transition-colors cursor-pointer group"
                 onClick={() => onSelect(req.id)}
               >
-                <td className="px-6 py-4 font-mono text-xs font-bold text-slate-600">{req.id}</td>
-                <td className="px-6 py-4">
-                  <span className="inline-flex px-2 py-0.5 rounded bg-white border border-slate-200 text-xs font-bold text-slate-600 shadow-sm">
+                <td className="px-5 py-3.5 text-sm font-bold text-[#1e293b]">{req.customer}</td>
+                <td className="px-5 py-3.5 font-mono text-xs text-slate-400">{req.id}</td>
+                <td className="px-5 py-3.5 text-xs text-slate-400">{req.date}</td>
+                <td className="px-5 py-3.5">
+                  <span className="inline-flex px-2 py-0.5 rounded border border-slate-200 text-[10px] font-medium text-slate-500">
                     {req.type}
                   </span>
                 </td>
-                <td className="px-6 py-4 font-bold text-[#1e293b]">{req.customer}</td>
-                <td className="px-6 py-4 text-slate-600 font-mono text-xs">{req.date}</td>
-                <td className="px-6 py-4 font-medium text-slate-700">{req.manager || '-'}</td>
-                <td className="px-6 py-4">
-                  <span className="inline-flex px-2 py-0.5 rounded bg-slate-100 text-xs font-mono font-bold text-slate-500">
-                    {req.currentStep || '-'}
-                  </span>
+                <td className="px-5 py-3.5">
+                  <div className="flex flex-col gap-0.5">
+                    <span className="text-[10px] text-slate-400">{req.stage || '-'}</span>
+                    <StatusBadge status={req.status} />
+                  </div>
                 </td>
-                <td className="px-6 py-4 text-slate-600">{req.assignedSalesStaff || '-'}</td>
-                <td className="px-6 py-4">
-                  <StatusBadge status={req.status} />
-                </td>
-                <td className="px-6 py-4 text-right">
-                  <button className="text-slate-400 hover:text-[#1e293b] group-hover:translate-x-1 transition-transform p-1 rounded hover:bg-slate-100">
-                    <ChevronRight size={16} />
+                <td className="px-5 py-3.5 text-xs text-slate-600">{req.assignedSalesStaff || <span className="text-slate-300">-</span>}</td>
+                <td className="px-5 py-3.5 text-right">
+                  <button className="text-slate-300 hover:text-slate-600 p-1 rounded hover:bg-slate-100 transition-colors">
+                    <ChevronRight size={14} />
                   </button>
                 </td>
               </tr>
@@ -434,6 +418,7 @@ function RequestDetail({ request, onBack, onNavigate }: { request: RequestRowWit
   const meetingStatus = isDropped ? '이탈' : ['S5', 'S6'].includes(currentStep) ? '진행 중' : '완료';
   const claimsStatus = isDropped ? '대기' : ['S7', 'S8'].includes(currentStep) ? '진행 중' : currentStep === 'S9' ? '완료' : '대기';
   const requestDateLabel = request.date.replace(/-/g, '.');
+  const linkedCustomer = CUSTOMER_MASTER_DERIVED_MOCK.customers.find((customer) => customer.name === request.customer);
 
   return (
     <div className="flex flex-col h-full bg-[#F9FAFB] overflow-hidden">
@@ -453,7 +438,11 @@ function RequestDetail({ request, onBack, onNavigate }: { request: RequestRowWit
           </div>
         </div>
         <div className="flex gap-2">
-           <button className="px-4 py-2 border border-slate-200 bg-white rounded-lg text-sm font-bold text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition-colors flex items-center gap-2 shadow-sm">
+           <button
+              type="button"
+              onClick={() => onNavigate?.(linkedCustomer ? `customers:${linkedCustomer.id}` : 'customers')}
+              className="px-4 py-2 border border-slate-200 bg-white rounded-lg text-sm font-bold text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition-colors flex items-center gap-2 shadow-sm"
+           >
               <User size={16} /> 고객 상세 정보
            </button>
         </div>

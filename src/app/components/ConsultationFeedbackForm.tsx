@@ -17,7 +17,6 @@ const calculateInitialValues = (meeting: any) => {
       fracture_sequela: { isActive: false, text: '' },
       surgery: { isActive: false, text: '' },
       duty_violation: { isActive: false, text: '' },
-      simpyeongwon: { isActive: false, text: '' },
       first_explanation: { isActive: false, text: '' },
       denial_reason: { isActive: false, text: '' },
       expensive_reason: { isActive: false, text: '' },
@@ -44,7 +43,6 @@ const calculateInitialValues = (meeting: any) => {
       fracture_sequela: { isActive: false, text: '' },
       surgery: { isActive: false, text: '' },
       duty_violation: { isActive: false, text: '' },
-      simpyeongwon: { isActive: false, text: '' },
       
       // Section 3
       first_explanation: { isActive: false, text: '' },
@@ -57,13 +55,16 @@ const calculateInitialValues = (meeting: any) => {
    };
 };
 
+type FeedbackValues = ReturnType<typeof calculateInitialValues>;
+type FeedbackKey = keyof FeedbackValues;
+
 export function ConsultationFeedbackForm({ meeting, onClose, isEmbedded = false }: ConsultationFeedbackFormProps) {
   const Container = isEmbedded ? 'div' : 'div';
   const containerClass = isEmbedded ? 'bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden' : 'flex flex-col h-full overflow-hidden';
 
   // State Management
   // We use a function in useState to initialize only once
-  const [initialValues, setInitialValues] = useState(() => calculateInitialValues(meeting));
+  const [initialValues, setInitialValues] = useState<FeedbackValues>(() => calculateInitialValues(meeting));
   const [values, setValues] = useState(initialValues);
 
   // Check for unsaved changes
@@ -72,11 +73,11 @@ export function ConsultationFeedbackForm({ meeting, onClose, isEmbedded = false 
   }, [values, initialValues]);
 
   // Handlers
-  const handleChange = (key: string, text: string) => {
+  const handleChange = (key: FeedbackKey, text: string) => {
      setValues(prev => ({ ...prev, [key]: { ...prev[key], text } }));
   };
 
-  const handleToggle = (key: string) => {
+  const handleToggle = (key: FeedbackKey) => {
      setValues(prev => ({ ...prev, [key]: { ...prev[key], isActive: !prev[key].isActive } }));
   };
 
@@ -244,17 +245,6 @@ export function ConsultationFeedbackForm({ meeting, onClose, isEmbedded = false 
                          text={values.duty_violation.text}
                          onToggle={() => handleToggle('duty_violation')}
                          onChange={(txt) => handleChange('duty_violation', txt)}
-                      />
-                      
-                      {/* Dynamic Item */}
-                      <FeedbackItem 
-                         label="5. 심평원 (추가항목)" 
-                         placeholder="심평원 관련 내용 입력" 
-                         isDeletable 
-                         isActive={values.simpyeongwon.isActive}
-                         text={values.simpyeongwon.text}
-                         onToggle={() => handleToggle('simpyeongwon')}
-                         onChange={(txt) => handleChange('simpyeongwon', txt)}
                       />
                    </div>
                 </div>

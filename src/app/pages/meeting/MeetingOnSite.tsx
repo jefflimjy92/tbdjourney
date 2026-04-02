@@ -6,6 +6,7 @@
 import React from 'react';
 import { Mic, FileText, CheckCircle, Clock, Star, MessageSquare, Upload, Play, AlertCircle } from 'lucide-react';
 import clsx from 'clsx';
+import { toast } from 'sonner';
 import { MeetingExecution, type MeetingExecutionProps } from '@/app/pages/MeetingExecution';
 
 // ── S8: 클로바노트 연동 (녹취 분석) ──
@@ -84,7 +85,11 @@ function ClovaNotePanel() {
               >
                 <Play className="h-3.5 w-3.5" /> 녹취 파일 분석
               </button>
-              <button className="px-4 py-2 text-xs font-bold border border-gray-300 text-gray-600 rounded-lg hover:bg-gray-50">
+              <button
+                type="button"
+                onClick={() => toast('클로바노트 연동은 준비 중입니다')}
+                className="px-4 py-2 text-xs font-bold border border-gray-300 text-gray-600 rounded-lg hover:bg-gray-50"
+              >
                 클로바노트 연동
               </button>
             </div>

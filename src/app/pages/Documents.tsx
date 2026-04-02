@@ -11,6 +11,7 @@ import {
   ShieldCheck,
 } from 'lucide-react';
 import clsx from 'clsx';
+import { toast } from 'sonner';
 import { JourneyHeader } from '@/app/components/journey/JourneyHeader';
 import { JourneyRequirementPanel } from '@/app/components/journey/JourneyRequirementPanel';
 import { useJourneyStore } from '@/app/journey/JourneyContext';
@@ -112,7 +113,11 @@ export function Documents() {
                 <td className="px-6 py-4 text-slate-600">{doc.reviewedBy || '-'}</td>
                 <td className="px-6 py-4 text-slate-500 text-xs">{doc.reviewedAt || '-'}</td>
                 <td className="px-6 py-4 text-right">
-                  <button className="text-slate-400 hover:text-[#1e293b]">
+                  <button
+                    type="button"
+                    onClick={() => toast('문서 다운로드는 준비 중입니다')}
+                    className="text-slate-400 hover:text-[#1e293b]"
+                  >
                     <Download size={18} />
                   </button>
                 </td>

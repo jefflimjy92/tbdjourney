@@ -167,13 +167,13 @@ export function Dashboard() {
     <div className="space-y-6">
       
       {/* Header */}
-      <div className="flex justify-between items-end">
+      <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-[#1e293b] tracking-tight">플랫폼 인사이트 (Platform Insights)</h1>
           <p className="text-slate-500 mt-1 text-sm">고객 유입부터 계약 전환까지의 전체 흐름 분석</p>
         </div>
-        <div className="flex gap-2">
-          <button className="flex items-center gap-2 px-3 py-1.5 bg-white border border-slate-200 rounded text-xs font-bold text-slate-600 hover:bg-slate-50 shadow-sm transition-colors">
+        <div className="flex flex-wrap gap-2">
+          <button className="flex items-center gap-2 rounded border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-600 shadow-sm transition-colors hover:bg-slate-50">
              <Download size={14} /> 리포트 다운로드
           </button>
           <div className="text-xs font-medium bg-slate-800 text-white px-3 py-1.5 rounded shadow-sm flex items-center gap-1">
@@ -183,7 +183,7 @@ export function Dashboard() {
       </div>
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <KPICard 
           title="총 유입 고객 (Total Leads)" 
           value="1,250" 
@@ -221,14 +221,14 @@ export function Dashboard() {
 
       {/* Inflow Section (S1) */}
       <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
-        <div className="flex justify-between items-start mb-4">
+        <div className="mb-4 flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
           <div>
             <h3 className="font-bold text-[#1e293b] flex items-center gap-2">
               <TrendingUp size={16} className="text-slate-400" /> 유입 현황 (Inflow Analytics)
             </h3>
             <p className="text-xs text-slate-400 mt-1">채널별 유입수, CPA, ROAS 분석</p>
           </div>
-          <div className="flex gap-3 text-xs">
+          <div className="flex flex-wrap gap-2 text-xs">
             <div className="px-3 py-1.5 bg-slate-50 rounded border border-slate-100">
               총 유입: <span className="font-bold text-[#1e293b]">{INFLOW_CHANNEL_DETAIL.reduce((s, c) => s + c.inflow, 0)}건</span>
             </div>

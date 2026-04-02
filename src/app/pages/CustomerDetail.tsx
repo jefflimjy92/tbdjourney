@@ -30,6 +30,7 @@ import {
   UserPlus
 } from 'lucide-react';
 import clsx from 'clsx';
+import { toast } from 'sonner';
 import { InsuranceMainView } from "@/app/components/InsuranceMainView";
 
 // Mock customer data
@@ -643,13 +644,25 @@ export function CustomerDetail({ lead, onBack }: CustomerDetailProps) {
 
             {/* Action Buttons */}
             <div className="grid grid-cols-1 gap-2">
-              <button className="flex items-center justify-center gap-2 bg-slate-800 text-white py-2.5 rounded-lg hover:bg-slate-900 text-sm font-medium transition-colors">
+              <button
+                type="button"
+                onClick={() => toast.success('저장되었습니다')}
+                className="flex items-center justify-center gap-2 bg-slate-800 text-white py-2.5 rounded-lg hover:bg-slate-900 text-sm font-medium transition-colors"
+              >
                 <Save size={16} /> 저장
               </button>
-              <button className="flex items-center justify-center gap-2 bg-blue-600 text-white py-2.5 rounded-lg hover:bg-blue-700 text-sm font-medium transition-colors">
+              <button
+                type="button"
+                onClick={() => toast('문자 발송은 준비 중입니다')}
+                className="flex items-center justify-center gap-2 bg-blue-600 text-white py-2.5 rounded-lg hover:bg-blue-700 text-sm font-medium transition-colors"
+              >
                 <Send size={16} /> 문자 발송
               </button>
-              <button className="flex items-center justify-center gap-2 bg-teal-600 text-white py-2.5 rounded-lg hover:bg-teal-700 text-sm font-medium transition-colors shadow-md">
+              <button
+                type="button"
+                onClick={() => toast('미팅팀 배정은 준비 중입니다')}
+                className="flex items-center justify-center gap-2 bg-teal-600 text-white py-2.5 rounded-lg hover:bg-teal-700 text-sm font-medium transition-colors shadow-md"
+              >
                 <Users size={16} /> 미팅팀 배정 (Handoff)
               </button>
             </div>
@@ -850,7 +863,7 @@ export function CustomerDetail({ lead, onBack }: CustomerDetailProps) {
             <div className="bg-slate-50 p-12 text-center rounded-lg border border-dashed border-slate-300">
               <DollarSign className="mx-auto text-slate-300 mb-3" size={48} />
               <p className="text-slate-500 text-sm font-medium mb-1">보상/환급 데이터 준비중</p>
-              <p className="text-slate-400 text-xs">곧 서비스 예정입���다</p>
+              <p className="text-slate-400 text-xs">이번 배치에서는 고객 기본정보와 보험 내역을 우선 정리하고, 보상/환급 관리는 차기 범위에서 연결합니다.</p>
             </div>
           )}
 

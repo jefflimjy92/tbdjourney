@@ -16,6 +16,7 @@ import {
   Link,
   User,
   FileX,
+  FileText,
   XCircle,
   PlayCircle,
   HelpCircle,
@@ -33,7 +34,6 @@ import {
   Users,
   FileCheck,
   Shield,
-  AlertOctagon,
   Search,
   ToggleLeft,
   ToggleRight,
@@ -42,12 +42,11 @@ import clsx from 'clsx';
 import { format, subDays } from 'date-fns';
 import { ContractRegistrationModal } from '@/app/components/ContractRegistrationModal';
 import { toast } from 'sonner';
-import { TransitionGuardModal } from '@/app/components/journey/TransitionGuardModal';
 import { useRole } from '@/app/auth/RoleContext';
 import { useJourney, useJourneyStore } from '@/app/journey/JourneyContext';
 import { DEFAULT_CONSULTATION_DRAFT, DEFAULT_MEETING_DRAFT } from '@/app/journey/mockJourneys';
-import { computeJourney, getEffectiveBlocking, sortRequirementAlerts, isPostMeetingComplete } from '@/app/journey/rules';
-import type { DbCategory, MeetingDraft, MeetingReferralContact, MeetingStepNumber, RequestJourney, RequirementAlert, StageStatus } from '@/app/journey/types';
+import { computeJourney, isPostMeetingComplete } from '@/app/journey/rules';
+import type { DbCategory, MeetingCompanionInfo, MeetingDocStatus, MeetingDraft, MeetingReferralContact, MeetingStepNumber, RequestJourney, StageStatus } from '@/app/journey/types';
 
 // Components from Consultation for consistency
 import { CustomerProfileSummary } from '@/app/components/CustomerProfileSummary';
@@ -55,11 +54,21 @@ import { CustomerInputSection } from '@/app/components/CustomerInputSection';
 import LiveRecordSection from '@/imports/Container-168-10370';
 import { ConsultationFeedbackForm } from '@/app/components/ConsultationFeedbackForm';
 import { RefundAndMeetingInfo } from '@/app/components/RefundAndMeetingInfo';
-import { FileAttachmentSection, FileAttachment } from '@/app/components/FileAttachmentSection';
+import type { FileAttachment } from '@/app/components/FileAttachmentSection';
 import { ContractInfoSection, ContractData } from '@/app/components/ContractInfoSection';
 import { MeetingCenterTabs, type CenterTab } from '@/app/components/meeting/MeetingCenterTabs';
-import { MOCK_DATA, getCustomerDetail } from '@/app/mockData';
+import { MOCK_DATA } from '@/app/mockData';
 import { ListPeriodControls } from '@/app/components/ListPeriodControls';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/app/components/ui/alert-dialog';
 import {
   EmployeeStepMatrixOverview,
   EmployeeStepOwnerDetail,
@@ -76,7 +85,7 @@ import {
 
 // --- Lifecycle Data Structure ---
 
-type StatusGroup = 'PENDING' | 'NEGOTIATING' | 'WON' | 'LOST';
+type StatusGroup = 'PENDING' | 'NEGOTIATING' | 'CONTRACT_MGMT' | 'WON' | 'LOST';
 
 interface StatusOption {
   value: string;
@@ -98,7 +107,12 @@ const MEETING_LIFECYCLE: Record<StatusGroup, {
     activeColor: 'bg-slate-100 text-slate-800 border-slate-300 ring-1 ring-slate-300',
     icon: <Clock size={16} />,
     options: [
-      { value: 'meeting-confirmed', label: '미팅 확정', desc: '스케줄 조율 완료' },
+      { value: 'intake-confirmed', label: '미팅인지완료', desc: '신규 DB 유입 직후 초기 상태' },
+      { value: 'absent', label: '부재', desc: '통화 시도 후 부재', requiresSubReason: true },
+      { value: 'standby', label: '대기', desc: '통화 되었으나 일정 조율 중', requiresSubReason: true },
+      { value: 'meeting-confirmed', label: '미팅확정', desc: '일정·장소 확정 완료' },
+      { value: 'pre-meeting-cancel', label: '미팅 전 취소', desc: '고객 미팅 전 거부', requiresSubReason: true },
+      { value: 'pre-meeting-impossible', label: '미팅 전 불가', desc: '인수불가 등 진행 불가', requiresSubReason: true },
     ]
   },
   NEGOTIATING: {
@@ -107,8 +121,19 @@ const MEETING_LIFECYCLE: Record<StatusGroup, {
     activeColor: 'bg-amber-50 text-amber-700 border-amber-200 ring-1 ring-amber-300',
     icon: <Briefcase size={16} />,
     options: [
-      { value: 'followup-in-progress', label: '후속 진행', desc: '보완, 재접촉, 추가 검토 진행' },
-      { value: 'insurance-re-review', label: '보험 재심사', desc: '보험사 재심사 또는 추가 심사 서류 대응' },
+      { value: 'prospect', label: '가망고객(미팅완료)', desc: '계약 가능성 있는 고객', requiresSubReason: true },
+      { value: 'post-meeting-impossible', label: '미팅 후 불가', desc: '현장 계약 불가 확인', requiresSubReason: true },
+      { value: 'second-meeting', label: '2차미팅', desc: '추가 상담·설계 검토 필요' },
+    ]
+  },
+  CONTRACT_MGMT: {
+    label: '계약 관리',
+    color: 'hover:bg-blue-50 text-blue-600',
+    activeColor: 'bg-blue-50 text-blue-700 border-blue-200 ring-1 ring-blue-300',
+    icon: <FileText size={16} />,
+    options: [
+      { value: 'feedback-done', label: '피드백완료', desc: '설계안·견적 전달 완료' },
+      { value: 'contract-delay', label: '계약연기', desc: '청약 완료, 수납 대기' },
     ]
   },
   WON: {
@@ -117,7 +142,7 @@ const MEETING_LIFECYCLE: Record<StatusGroup, {
     activeColor: 'bg-emerald-50 text-emerald-700 border-emerald-200 ring-1 ring-emerald-300',
     icon: <Trophy size={16} />,
     options: [
-      { value: 'contract-completed', label: '계약완료', desc: '계약 체결 성공' },
+      { value: 'contract-completed', label: '계약완료', desc: '계약 체결 최종 완료' },
     ]
   },
   LOST: {
@@ -126,45 +151,41 @@ const MEETING_LIFECYCLE: Record<StatusGroup, {
     activeColor: 'bg-rose-50 text-rose-700 border-rose-200 ring-1 ring-rose-300',
     icon: <XCircle size={16} />,
     options: [
-      { value: 'contract-failed', label: '계약실패', desc: '상담은 진행했으나 계약으로 연결되지 않음', requiresSubReason: true },
-      { value: 'on-site-impossible', label: '현장불가', desc: '현장에서 진행 불가 사유 확인', requiresSubReason: true },
-      { value: 'meeting-cancelled', label: '미팅취소', desc: '고객 취소 또는 일정 철회', requiresSubReason: true },
-      { value: 'no-show', label: '노쇼 (No-Show)', desc: '연락 두절/현장 부재' },
-      { value: 'uw-rejected', label: '인수 불가', desc: '보험사 거절 (UW 실패)', requiresSubReason: true },
-      { value: 'withdrawn', label: '청약 철회/해지', desc: '품질보증 해지 등', requiresSubReason: true },
+      { value: 'contract-failed', label: '계약 실패', desc: '미팅 후 최종 계약 불성립', requiresSubReason: true },
+      { value: 'final-absent', label: '최종 부재', desc: 'N회 이상 미응답 종결' },
+      { value: 'withdrawn', label: '청약철회/해지', desc: '청약 철회 또는 계약 해지', requiresSubReason: true },
     ]
   }
 };
 
 // --- Sub Reason Options ---
 const SUB_REASON_OPTIONS: Record<string, string[]> = {
-  'contract-failed': ['조건 미합의', '보험료 부담', '경쟁사 선택', '결정 지연 후 이탈', '기타'],
-  'on-site-impossible': ['서류 미비', '결정권자 부재', '현장 상황 변경', '고객 컨디션 이슈', '기타'],
-  'meeting-cancelled': ['고객 일정 변경', '고객 거부', '가족 반대', '연락 두절', '기타'],
-  'withdrawn': ['단순 변심', '가족 반대', '타사 조건 비교 후 이탈', '경제적 부담', '기타'],
-  'uw-rejected': ['심사 거절 (병력)', '부담보 거절', '한도 초과', '신용정보 문제', '기타']
+  'absent': ['1회 부재', '2회 부재'],
+  'standby': ['일정 조율 중', '고객 회신 대기', '콜백 예정'],
+  'pre-meeting-cancel': ['시간 없음', '신뢰도 부족', '미팅 거부', '보험 의심', '고객 변심', '환급금 기대 이하', '고려 후 재접수', '기타'],
+  'pre-meeting-impossible': ['인수불가', '보상담당자 변경 불가', '계피상이 동행 불가', '기타'],
+  'prospect': ['미팅 완료', '계약 검토 중', '후속 상담 예정'],
+  'post-meeting-impossible': ['인수불가', '보상담당자 변경 불가', '계피상이 동행 불가', '기타'],
+  'contract-failed': ['보험 무반응', '설계 거절', '보험료 부담', '보험 양호', '설계사 관계', '기타'],
+  'withdrawn': ['청약 철회 (15일 이내)', '계약 해지'],
 };
 
-const FOLLOWUP_SUB_OPTIONS = [
-  '2차 미팅 예정',
-  '서류 보완 대기',
-  '고객 재연락 예정',
-  '내부 검토 중',
-  '장기 보류',
-] as const;
-
 const MEETING_STATUS_LABELS: Record<string, string> = {
-  'meeting-confirmed': '미팅 확정',
-  'followup-in-progress': '후속 진행',
-  'insurance-re-review': '보험 재심사',
-  'followup-2nd-meeting': '2차 미팅',
+  'intake-confirmed': '미팅인지완료',
+  'absent': '부재',
+  'standby': '대기',
+  'meeting-confirmed': '미팅확정',
+  'pre-meeting-cancel': '미팅 전 취소',
+  'pre-meeting-impossible': '미팅 전 불가',
+  'prospect': '가망고객(미팅완료)',
+  'post-meeting-impossible': '미팅 후 불가',
+  'second-meeting': '2차미팅',
+  'feedback-done': '피드백완료',
+  'contract-delay': '계약연기',
   'contract-completed': '계약완료',
-  'contract-failed': '계약실패',
-  'on-site-impossible': '현장불가',
-  'meeting-cancelled': '미팅취소',
-  'no-show': '노쇼',
-  'uw-rejected': '인수 불가',
-  'withdrawn': '청약 철회/해지',
+  'contract-failed': '계약 실패',
+  'final-absent': '최종 부재',
+  'withdrawn': '청약철회/해지',
 };
 
 
@@ -190,16 +211,6 @@ const STEP_SECTION_MAP: Record<MeetingStepNumber, MeetingSectionId> = {
   6: 'claimHandoff',
 };
 
-const SECTION_STEP_MAP: Record<MeetingSectionId, MeetingStepNumber> = {
-  preCall: 1,
-  analysis: 2,
-  script: 3,
-  esign: 4,
-  meetingComplete: 5,
-  claimHandoff: 6,
-  status: 5,
-};
-
 const STEP_TITLE_MAP: Record<MeetingStepNumber, string> = {
   1: '미팅 확정',
   2: '보험 분석',
@@ -209,86 +220,34 @@ const STEP_TITLE_MAP: Record<MeetingStepNumber, string> = {
   6: '청구 인계',
 };
 
-const SECTION_TAB_MAP: Record<Exclude<MeetingSectionId, 'status'>, CenterTab> = {
-  preCall: 'customer',
-  analysis: 'insurance',
-  script: 'script',
-  esign: 'meetingComplete',
-  meetingComplete: 'meetingComplete',
-  claimHandoff: 'meetingComplete',
-};
-
-const SECTION_ANCHOR_ID_MAP: Record<MeetingSectionId, string> = {
-  preCall: 'tab-customer',
-  analysis: 'tab-insurance',
-  script: 'tab-script',
-  esign: 'tab-meeting-complete',
-  meetingComplete: 'tab-meeting-complete',
-  claimHandoff: 'step-claim-handoff',
-  status: 'tab-status',
-};
-
-function resolveMeetingSection(alert: RequirementAlert): MeetingSectionId {
-  if (alert.id === 'meeting-precall') return 'preCall';
-  if (alert.id === 'meeting-analysis' || alert.id === 'integration-hira') return 'analysis';
-  if (alert.id === 'meeting-script' || alert.id === 'integration-script') return 'script';
-  if (alert.id === 'meeting-esign' || alert.id === 'meeting-glosign' || alert.id.startsWith('integration-glo')) {
-    return 'esign';
-  }
-  if (
-    alert.id === 'meeting-complete' ||
-    alert.id.startsWith('meeting-noshow') ||
-    alert.id.startsWith('meeting-close') ||
-    alert.id.startsWith('meeting-withdraw') ||
-    alert.id === 'meeting-uw-alt' ||
-    alert.id.startsWith('meeting-post') ||
-    alert.id === 'meeting-cx-min' ||
-    alert.id === 'meeting-referral' ||
-    alert.id === 'meeting-close-action' ||
-    alert.id.startsWith('meeting-contract') ||
-    alert.id.startsWith('meeting-delay') ||
-    alert.id.startsWith('meeting-claim') ||
-    alert.id === 'meeting-sales-pack' ||
-    alert.id.startsWith('doc-') ||
-    alert.kind === 'document' ||
-    alert.id.startsWith('integration-easy') ||
-    alert.id.startsWith('integration-claim')
-  ) {
-    return alert.id.startsWith('meeting-claim') ? 'claimHandoff' : 'meetingComplete';
-  }
-  if (
-    alert.id.startsWith('meeting-followup') ||
-    alert.id.startsWith('meeting-insurance-re-review') ||
-    alert.id.startsWith('meeting-cancel') ||
-    alert.id.startsWith('meeting-uw-reason') ||
-    alert.id.startsWith('consult-') ||
-    alert.id.startsWith('handoff-')
-  ) {
-    return 'status';
-  }
-  return 'status';
-}
-
 function normalizeLegacyMeetingStatus(status?: string): string {
   const statusMap: Record<string, string> = {
     '미팅확정': 'meeting-confirmed',
     '미팅 확정': 'meeting-confirmed',
     '유선 확인 완료': 'meeting-confirmed',
     '사전 분석 완료': 'meeting-confirmed',
-    '후속 진행': 'followup-in-progress',
-    '보험 재심사': 'insurance-re-review',
-    '2차 미팅': 'followup-in-progress',
-    '계약연기': 'followup-in-progress',
-    '청구 인계': 'followup-in-progress',
+    '후속 진행': 'prospect',
+    '보험 재심사': 'prospect',
+    '2차 미팅': 'second-meeting',
+    '계약연기': 'contract-delay',
+    '청구 인계': 'prospect',
     '계약완료': 'contract-completed',
     '계약실패': 'contract-failed',
     '계약실패(역량부족)': 'contract-failed',
-    '현장불가': 'on-site-impossible',
-    '미팅취소': 'meeting-cancelled',
-    '노쇼': 'no-show',
-    '인수 불가': 'uw-rejected',
+    '현장불가': 'post-meeting-impossible',
+    '미팅취소': 'pre-meeting-cancel',
+    '노쇼': 'final-absent',
+    '인수 불가': 'pre-meeting-impossible',
     '청약 철회': 'withdrawn',
     '청약 철회/해지': 'withdrawn',
+    // old code values
+    'followup-in-progress': 'prospect',
+    'insurance-re-review': 'prospect',
+    'on-site-impossible': 'post-meeting-impossible',
+    'meeting-cancelled': 'pre-meeting-cancel',
+    'no-show': 'final-absent',
+    'uw-rejected': 'pre-meeting-impossible',
+    'followup-2nd-meeting': 'second-meeting',
   };
   return status ? statusMap[status] || status : '';
 }
@@ -319,8 +278,14 @@ function toSelectableMeetingStatus(status?: string) {
   return normalized && normalized in MEETING_STATUS_LABELS ? normalized : '';
 }
 
+function normalizeStatusGroup(group?: string): StatusGroup {
+  if (group && group in MEETING_LIFECYCLE) return group as StatusGroup;
+  if (group === 'SCHEDULED') return 'PENDING';
+  return 'PENDING';
+}
+
 function isFinalMeetingResultSelected(status?: string) {
-  return hasValue(status) && status !== 'meeting-confirmed';
+  return hasValue(status) && status !== 'meeting-confirmed' && status !== 'intake-confirmed';
 }
 
 function formatMeetingRegion(location?: string) {
@@ -501,9 +466,10 @@ function getMeetingDetailStepMeta(status: string, date: string, summary?: string
         stepDates: buildMeetingStepDatesForKeys(date, MEETING_DETAIL_STEPS, ['step0', 'step1']),
       };
     case '미팅 완료':
-    case 'followup-in-progress':
-    case 'insurance-re-review':
-    case 'followup-2nd-meeting':
+    case 'prospect':
+    case 'second-meeting':
+    case 'feedback-done':
+    case 'contract-delay':
     case '후속 진행':
     case '보험 재심사':
     case '2차 미팅':
@@ -514,7 +480,7 @@ function getMeetingDetailStepMeta(status: string, date: string, summary?: string
         stageLabel: '미팅완료',
         stepDates: buildMeetingStepDatesForKeys(date, MEETING_DETAIL_STEPS, ['step0', 'step1', 'step2']),
       };
-    case 'meeting-cancelled':
+    case 'pre-meeting-cancel':
     case '미팅취소':
       return {
         employeeStepKey: 'step1',
@@ -525,35 +491,35 @@ function getMeetingDetailStepMeta(status: string, date: string, summary?: string
         terminalReason: summary,
         stepDates: buildMeetingStepDatesForKeys(date, MEETING_DETAIL_STEPS, ['step0', 'step1']),
       };
-    case 'no-show':
+    case 'pre-meeting-impossible':
+    case '인수 불가':
+      return {
+        employeeStepKey: 'step1',
+        stageLabel: '미팅확정',
+        decisionStepKey: 'step1',
+        decisionLabel: '미팅 전 불가',
+        decisionMarker: 'fail',
+        terminalReason: summary,
+        stepDates: buildMeetingStepDatesForKeys(date, MEETING_DETAIL_STEPS, ['step0', 'step1']),
+      };
+    case 'final-absent':
     case '노쇼':
       return {
         employeeStepKey: 'step2',
         stageLabel: '미팅완료',
         decisionStepKey: 'step2',
-        decisionLabel: '노쇼',
+        decisionLabel: '최종 부재',
         decisionMarker: 'fail',
         terminalReason: summary,
         stepDates: buildMeetingStepDatesForKeys(date, MEETING_DETAIL_STEPS, ['step0', 'step1', 'step2']),
       };
-    case 'on-site-impossible':
+    case 'post-meeting-impossible':
     case '현장불가':
       return {
         employeeStepKey: 'step2',
         stageLabel: '미팅완료',
         decisionStepKey: 'step2',
-        decisionLabel: '현장불가',
-        decisionMarker: 'fail',
-        terminalReason: summary,
-        stepDates: buildMeetingStepDatesForKeys(date, MEETING_DETAIL_STEPS, ['step0', 'step1', 'step2']),
-      };
-    case 'uw-rejected':
-    case '인수 불가':
-      return {
-        employeeStepKey: 'step2',
-        stageLabel: '미팅완료',
-        decisionStepKey: 'step2',
-        decisionLabel: '인수 불가',
+        decisionLabel: '미팅 후 불가',
         decisionMarker: 'fail',
         terminalReason: summary,
         stepDates: buildMeetingStepDatesForKeys(date, MEETING_DETAIL_STEPS, ['step0', 'step1', 'step2']),
@@ -590,8 +556,25 @@ function getMeetingDetailStepMeta(status: string, date: string, summary?: string
   }
 }
 
-const CLAIM_HANDOFF_LABELS = ['3종 서류', '증권', '지급내역서'] as const;
+const CLAIM_HANDOFF_LABELS = ['증권', '지급내역서'] as const;
 const INTEGRATION_LABELS = ['회원가입', '앱 설치', '홈택스', '심평원', '건보', 'C4U'] as const;
+
+const DOC_STATUS_STEPS: MeetingDocStatus[] = ['requested', 'sent', 'received'];
+
+function isDocStatusComplete(status: MeetingDocStatus) {
+  return status === 'received';
+}
+
+function getDocStatusLabel(status: MeetingDocStatus) {
+  if (status === 'requested') return '고객 요청';
+  if (status === 'sent') return '발송 완료';
+  if (status === 'received') return '수취 완료';
+  return '대기';
+}
+
+function getDocStatusOrder(status: MeetingDocStatus) {
+  return DOC_STATUS_STEPS.indexOf(status);
+}
 
 function toDeterministicSeed(input: string) {
   return Array.from(input).reduce((sum, char, index) => sum + char.charCodeAt(0) * (index + 1), 0);
@@ -616,9 +599,8 @@ function isMeetingDraftUntouched(draft?: MeetingDraft) {
     !draft.claimTransferRequested &&
     !hasValue(draft.claimTransferReason) &&
     draft.contractData.length === 0 &&
-    !draft.postThreeDocSubmitted &&
-    !draft.onSitePolicyCollected &&
-    !draft.onSitePaymentStatementCollected &&
+    draft.policyDocStatus === 'idle' &&
+    draft.paymentDocStatus === 'idle' &&
     !draft.memberSignupCompleted &&
     !draft.onSiteAppLinked &&
     !draft.hometaxLinked &&
@@ -692,7 +674,7 @@ function formatFallbackContractResultLabel(item: any) {
   return `${count}건 / ${amount.toLocaleString('ko-KR')}만원`;
 }
 
-function buildClaimHandoffItems(
+function buildClaimHandoffState(
   item: any,
   draft?: MeetingDraft
 ) {
@@ -700,11 +682,14 @@ function buildClaimHandoffItems(
   const fallbackAllActive = item.category === 'refund' && statusCode === 'contract-completed';
   const useFallback = isMeetingDraftUntouched(draft);
 
-  return [
-    { label: '3종 서류', active: useFallback ? fallbackAllActive : draft?.postThreeDocSubmitted ?? fallbackAllActive },
-    { label: '증권', active: useFallback ? fallbackAllActive : draft?.onSitePolicyCollected ?? fallbackAllActive },
-    { label: '지급내역서', active: useFallback ? fallbackAllActive : draft?.onSitePaymentStatementCollected ?? fallbackAllActive },
-  ];
+  return {
+    policyDocStatus: useFallback
+      ? (fallbackAllActive ? 'received' : 'idle')
+      : draft?.policyDocStatus ?? (draft?.onSitePolicyCollected ? 'received' : 'idle'),
+    paymentDocStatus: useFallback
+      ? (fallbackAllActive ? 'received' : 'idle')
+      : draft?.paymentDocStatus ?? (draft?.onSitePaymentStatementCollected ? 'received' : 'idle'),
+  };
 }
 
 function buildIntegrationItems(
@@ -714,7 +699,7 @@ function buildIntegrationItems(
 ) {
   const statusCode = resolveMeetingStatusCode(item.status);
   const seed = toDeterministicSeed(item.requestId || item.id || item.customer || '');
-  const progressed = ['contract-completed', 'followup-in-progress', 'insurance-re-review'].includes(statusCode) || item.status === '미팅 완료';
+  const progressed = ['contract-completed', 'prospect', 'second-meeting', 'feedback-done', 'contract-delay'].includes(statusCode) || item.status === '미팅 완료';
   const useFallback = isMeetingDraftUntouched(draft);
   const signedUp = useFallback ? (hasJourney || statusCode !== '' || item.status !== '가망 고객') : draft?.memberSignupCompleted ?? (hasJourney || statusCode !== '' || item.status !== '가망 고객');
   const appInstalled = useFallback ? (progressed || seed % 3 === 0) : draft?.onSiteAppLinked ?? (progressed || seed % 3 === 0);
@@ -757,7 +742,7 @@ function buildReferralCount(item: any, draft?: MeetingDraft) {
     return 1 + (seed % 3);
   }
 
-  if (statusCode === 'followup-in-progress' || item.status === '미팅 완료') {
+  if (statusCode === 'prospect' || statusCode === 'second-meeting' || item.status === '미팅 완료') {
     return 1;
   }
 
@@ -857,6 +842,8 @@ const MEETING_DETAIL_COLUMNS: EmployeeStepOwnerDetailColumn<any>[] = [
     },
   },
 ];
+
+const SALES_MEMBERS = ['박미팅', '김성일', '이영업', '최상담', '정보상'];
 
 // --- Mock Data ---
 
@@ -1305,6 +1292,8 @@ export function MeetingExecution({ onNavigate, type, initialRequestId, meetingSt
   const [customPeriodStartDate, setCustomPeriodStartDate] = useState(defaultCustomPeriodRange.startDate);
   const [customPeriodEndDate, setCustomPeriodEndDate] = useState(defaultCustomPeriodRange.endDate);
   const [activeTab, setActiveTab] = useState<'list' | 'staff'>('list');
+  const [assignees, setAssignees] = useState<Record<string, string>>({});
+  const [editingAssigneeId, setEditingAssigneeId] = useState<string | null>(null);
   const { journeys } = useJourneyStore();
   const { currentRole } = useRole();
   const currentOwnerName = currentRole === 'sales_member' ? '박미팅' : '';
@@ -1522,7 +1511,7 @@ export function MeetingExecution({ onNavigate, type, initialRequestId, meetingSt
           <div className="p-6">
             <EmployeeStepMatrixOverview
               items={visibleStaffItems}
-              steps={MEETING_STEPS}
+              steps={[...MEETING_STEPS] as any}
               emptyMessage="기간 내 확인할 미팅 담당자 데이터가 없습니다."
               onSelectOwner={setSelectedStaffOwner}
             />
@@ -1566,17 +1555,46 @@ export function MeetingExecution({ onNavigate, type, initialRequestId, meetingSt
                    </td>
                    <td className="px-6 py-4 text-slate-600">{item.date}</td>
                    <td className="px-6 py-4 text-slate-600 text-xs truncate max-w-[150px]">{item.location}</td>
-                   <td className="px-6 py-4">{item.manager}</td>
-                   <td className="px-6 py-4">
-                     <span className={clsx(
-                        "inline-flex px-2 py-0.5 rounded border text-xs font-bold items-center gap-1",
-                        item.statusGroup === 'WON' ? "bg-emerald-50 text-emerald-700 border-emerald-100" :
-                        item.statusGroup === 'LOST' ? "bg-rose-50 text-rose-700 border-rose-100" :
-                        item.statusGroup === 'PENDING' ? "bg-slate-50 text-slate-600 border-slate-100" :
-                        "bg-blue-50 text-blue-700 border-blue-100"
-                     )}>
-                       {item.status}
-                     </span>
+                   <td className="px-6 py-4" onClick={(e) => e.stopPropagation()}>
+                     {(assignees[item.id] || item.manager) && editingAssigneeId !== item.id ? (
+                       <div className="flex items-center gap-1.5">
+                         <span className="text-xs font-medium text-slate-700">{assignees[item.id] || item.manager}</span>
+                         <button
+                           onClick={() => setEditingAssigneeId(item.id)}
+                           className="text-[10px] text-blue-600 hover:text-blue-800 font-bold"
+                         >
+                           수정
+                         </button>
+                       </div>
+                     ) : (
+                       <select
+                         value={assignees[item.id] ?? item.manager ?? ''}
+                         onChange={(e) => {
+                           const newAssignee = e.target.value;
+                           setAssignees((prev) => ({ ...prev, [item.id]: newAssignee }));
+                           setEditingAssigneeId(null);
+                           if (newAssignee) {
+                             toast.success(`${item.customer}의 담당자가 ${newAssignee}(으)로 변경되었습니다.`);
+                           }
+                         }}
+                         onBlur={() => setEditingAssigneeId(null)}
+                         autoFocus={editingAssigneeId === item.id}
+                         className="text-xs border border-slate-200 rounded px-2 py-1 bg-white focus:outline-none focus:border-blue-400"
+                       >
+                         <option value="">미배정</option>
+                         {SALES_MEMBERS.map((m) => (
+                           <option key={m} value={m}>{m}</option>
+                         ))}
+                       </select>
+                     )}
+                   </td>
+                   <td className="px-4 py-3">
+                     <div className="flex flex-col gap-0.5">
+                       <span className="text-[10px] text-slate-400">
+                         {item.statusGroup === 'WON' ? '계약 완료' : item.statusGroup === 'LOST' ? '종료/이탈' : item.statusGroup === 'PENDING' ? '미팅 전' : item.statusGroup === 'NEGOTIATING' ? '미팅 후' : item.statusGroup === 'CONTRACT_MGMT' ? '계약 관리' : '-'}
+                       </span>
+                       <span className="text-xs font-bold text-slate-700">{item.status}</span>
+                     </div>
                    </td>
                    <td className="px-6 py-4 text-right">
                      <button
@@ -1664,15 +1682,9 @@ function MeetingExecutionDetail({ item, onBack, onNavigate, type }: { item: any,
    const [selectedSubDetail, setSelectedSubDetail] = useState<string>('');
    const [contractData, setContractData] = useState<ContractData[]>([]);
    const [editingContractIndex, setEditingContractIndex] = useState<number | null>(null);
-   const [guardModalOpen, setGuardModalOpen] = useState(false);
-   const [contractCompletedPromptOpen, setContractCompletedPromptOpen] = useState(false);
-   const [guardItems, setGuardItems] = useState<RequirementAlert[]>([]);
-   const [guardIndex, setGuardIndex] = useState(0);
-   const [missingModalOpen, setMissingModalOpen] = useState(false);
+   const [showContractConfirm, setShowContractConfirm] = useState(false);
    const [highlightSection, setHighlightSection] = useState<string | null>(null);
    const [expandedStep, setExpandedStep] = useState<MeetingStepNumber | null>(1);
-   const [statusSectionOpen, setStatusSectionOpen] = useState(false);
-
    const [isContractModalOpen, setIsContractModalOpen] = useState(false);
    const [uploadedFileName, setUploadedFileName] = useState<string | null>(null);
    const fileInputRef = useRef<HTMLInputElement>(null);
@@ -1685,8 +1697,9 @@ function MeetingExecutionDetail({ item, onBack, onNavigate, type }: { item: any,
    const meetingCompleteRef = useRef<HTMLDivElement>(null);
    const claimHandoffRef = useRef<HTMLDivElement>(null);
    const statusRef = useRef<HTMLDivElement>(null);
-   const [companionInput, setCompanionInput] = useState('');
+   const [companionDraft, setCompanionDraft] = useState<MeetingCompanionInfo>({ name: '', relationship: '', phone: '' });
    const [addressDetail, setAddressDetail] = useState('');
+   const [referralResult, setReferralResult] = useState<'none' | 'success' | 'fail'>('none');
 
    // 카카오 주소 검색 (다음 우편번호 서비스)
    const openAddressSearch = useCallback(() => {
@@ -1722,7 +1735,7 @@ function MeetingExecutionDetail({ item, onBack, onNavigate, type }: { item: any,
       meetingTime: '',
       meetingLocation: '',
       meetingConfirmed: false,
-      companions: [] as string[],
+      companions: [] as MeetingCompanionInfo[],
       authCodeReceived: false,
       insuranceSystemRegistered: false,
       statusInputDone: false,
@@ -1759,6 +1772,8 @@ function MeetingExecutionDetail({ item, onBack, onNavigate, type }: { item: any,
       claimTransferRequested: false,
       claimTransferReason: '',
       claimTransferAt: '',
+      policyDocStatus: 'idle' as MeetingDocStatus,
+      paymentDocStatus: 'idle' as MeetingDocStatus,
       followupDate: '',
       followupLocation: '',
       followupPurpose: '',
@@ -1787,7 +1802,6 @@ function MeetingExecutionDetail({ item, onBack, onNavigate, type }: { item: any,
    });
 
    const [meetingAdminState, setMeetingAdminState] = useState({
-      threeDocSubmitted: false,
       memberSignupCompleted: false,
       hometaxLinked: false,
       hiraLinked: false,
@@ -1796,6 +1810,17 @@ function MeetingExecutionDetail({ item, onBack, onNavigate, type }: { item: any,
       referralCount: 0,
    });
    const [referralContacts, setReferralContacts] = useState<MeetingReferralContact[]>([]);
+   const consultationHandoff = useMemo(() => {
+      const draft = journey?.consultationDraft;
+      const referralNote = draft?.referralNote?.trim() || '';
+      const hasReferral = Boolean(draft?.hasReferral);
+
+      return {
+         hasReferral,
+         referralNote,
+         hasAny: Boolean(referralNote) || hasReferral,
+      };
+   }, [journey?.consultationDraft]);
 
    const buildFallbackJourney = useCallback((): RequestJourney => ({
       requestId: item.requestId,
@@ -1803,6 +1828,10 @@ function MeetingExecutionDetail({ item, onBack, onNavigate, type }: { item: any,
       journeyType: item.category === 'refund' ? 'refund' : 'simple',
       owner: item.manager,
       stage: 'meeting',
+      phase: 'meeting',
+      step: 'S8_meeting_execution' as RequestJourney['step'],
+      dbCategoryV2: 'possible',
+      stepHistory: [],
       status: item.status,
       slaLabel: '-',
       nextDueAt: item.date,
@@ -1859,15 +1888,13 @@ function MeetingExecutionDetail({ item, onBack, onNavigate, type }: { item: any,
       if (mappedGroup === 'SCHEDULED') mappedGroup = 'PENDING';
 
       const legacyDetail = toSelectableMeetingStatus(item.status);
-      const legacySubDetail =
-         item.status === '2차 미팅'
-            ? '2차 미팅 예정'
-            : '';
+      const legacySubDetail = '';
       const isLegacyClaimTransfer = item.status === '청구 인계';
       const draft = journey?.meetingDraft;
-      const resolvedGroup = (draft?.selectedGroup as StatusGroup) || (mappedGroup as StatusGroup) || 'PENDING';
-      const claimHandoffItems = buildClaimHandoffItems(item, draft);
+      const resolvedGroup = normalizeStatusGroup(draft?.selectedGroup || mappedGroup);
+      const claimHandoffState = buildClaimHandoffState(item, draft);
       const integrationItems = buildIntegrationItems(item, draft, Boolean(journey));
+      const initialReferralCount = buildReferralCount(item, draft);
 
       setSelectedGroup(resolvedGroup);
       setSelectedDetail(toSelectableMeetingStatus(draft?.selectedDetail) || legacyDetail || '');
@@ -1893,8 +1920,8 @@ function MeetingExecutionDetail({ item, onBack, onNavigate, type }: { item: any,
          preMeetingCancellationNoticeSent: !!draft?.preMeetingCancellationNoticeSent,
          onSiteEasyPaperDone: !!draft?.onSiteEasyPaperDone,
          onSiteAppLinked: !!draft?.onSiteAppLinked,
-         onSitePolicyCollected: !!draft?.onSitePolicyCollected,
-         onSitePaymentStatementCollected: !!draft?.onSitePaymentStatementCollected,
+         onSitePolicyCollected: isDocStatusComplete(claimHandoffState.policyDocStatus),
+         onSitePaymentStatementCollected: isDocStatusComplete(claimHandoffState.paymentDocStatus),
          onSiteInstitutionLinked: !!draft?.onSiteInstitutionLinked,
          onSiteClaimAgreementDone: !!draft?.onSiteClaimAgreementDone,
          onSiteReferralPrompted: !!draft?.onSiteReferralPrompted,
@@ -1916,6 +1943,8 @@ function MeetingExecutionDetail({ item, onBack, onNavigate, type }: { item: any,
          claimTransferRequested: draft?.claimTransferRequested ?? isLegacyClaimTransfer,
          claimTransferReason: draft?.claimTransferReason || (isLegacyClaimTransfer ? '기존 청구 인계 상태에서 전환' : ''),
          claimTransferAt: draft?.claimTransferAt || (isLegacyClaimTransfer ? new Date().toISOString().slice(0, 16).replace('T', ' ') : ''),
+         policyDocStatus: claimHandoffState.policyDocStatus,
+         paymentDocStatus: claimHandoffState.paymentDocStatus,
          followupDate: draft?.followupDate || '',
          followupLocation: draft?.followupLocation || '',
          followupPurpose: draft?.followupPurpose || '',
@@ -1938,18 +1967,26 @@ function MeetingExecutionDetail({ item, onBack, onNavigate, type }: { item: any,
          claimAgreementRequested: !!draft?.claimAgreementRequested,
       });
       setMeetingAdminState({
-         threeDocSubmitted: claimHandoffItems.find((entry) => entry.label === '3종 서류')?.active ?? false,
          memberSignupCompleted: integrationItems.find((entry) => entry.label === '회원가입')?.active ?? false,
          hometaxLinked: integrationItems.find((entry) => entry.label === '홈택스')?.active ?? false,
          hiraLinked: integrationItems.find((entry) => entry.label === '심평원')?.active ?? false,
          nhisLinked: integrationItems.find((entry) => entry.label === '건보')?.active ?? false,
          c4uLinked: integrationItems.find((entry) => entry.label === 'C4U')?.active ?? false,
-         referralCount: buildReferralCount(item, draft),
+         referralCount: initialReferralCount,
       });
-      setReferralContacts(draft?.referralContacts || []);
+      const nextReferralContacts = draft?.referralContacts || [];
+      setReferralContacts(nextReferralContacts);
+      setReferralResult(
+         nextReferralContacts.length > 0 || draft?.referralAsked
+            ? 'success'
+            : draft?.onSiteReferralPrompted
+               ? 'fail'
+               : 'none',
+      );
       setCenterTab('customer');
-      setCompanionInput('');
-   }, [item.date, item.location, item.manager, item.status, item.statusGroup, journey]);
+      setCompanionDraft({ name: '', relationship: '', phone: '' });
+   // eslint-disable-next-line react-hooks/exhaustive-deps -- journey 제외: persist 시 journey 변경 → 무한 리셋 방지. item 변경 시에만 초기화.
+   }, [item.id, item.date, item.location, item.manager, item.status, item.statusGroup]);
 
    const updateMeetingWorkflow = useCallback(
       <K extends keyof typeof meetingWorkflow>(key: K, value: (typeof meetingWorkflow)[K]) => {
@@ -1966,9 +2003,10 @@ function MeetingExecutionDetail({ item, onBack, onNavigate, type }: { item: any,
    );
 
    const syncReferralCount = useCallback((contacts: MeetingReferralContact[]) => {
+      const nextReferralCount = getReferralContactCount(contacts);
       setMeetingAdminState((current) => ({
          ...current,
-         referralCount: getReferralContactCount(contacts),
+         referralCount: nextReferralCount,
       }));
    }, []);
 
@@ -1978,9 +2016,7 @@ function MeetingExecutionDetail({ item, onBack, onNavigate, type }: { item: any,
          syncReferralCount(next);
          return next;
       });
-      updateMeetingWorkflow('referralAsked', true);
-      updateMeetingWorkflow('onSiteReferralPrompted', true);
-   }, [syncReferralCount, updateMeetingWorkflow]);
+   }, [syncReferralCount]);
 
    const handleReferralContactChange = useCallback(
       (id: string, key: keyof Omit<MeetingReferralContact, 'id'>, value: string) => {
@@ -2006,7 +2042,14 @@ function MeetingExecutionDetail({ item, onBack, onNavigate, type }: { item: any,
       [syncReferralCount],
    );
 
-   const getMeetingDraft = useCallback((): MeetingDraft => ({
+   const getMeetingDraft = useCallback((): MeetingDraft => {
+      const persistedReferralContacts = referralResult === 'success' ? referralContacts : [];
+      const totalReferralCount = referralResult === 'success'
+         ? getReferralContactCount(persistedReferralContacts)
+         : 0;
+
+      return {
+      ...DEFAULT_MEETING_DRAFT,
       selectedGroup,
       selectedDetail,
       selectedSubDetail,
@@ -2027,11 +2070,11 @@ function MeetingExecutionDetail({ item, onBack, onNavigate, type }: { item: any,
       preMeetingCancellationNoticeSent: meetingWorkflow.preMeetingCancellationNoticeSent,
       onSiteEasyPaperDone: meetingWorkflow.onSiteEasyPaperDone,
       onSiteAppLinked: meetingWorkflow.onSiteAppLinked,
-      onSitePolicyCollected: meetingWorkflow.onSitePolicyCollected,
-      onSitePaymentStatementCollected: meetingWorkflow.onSitePaymentStatementCollected,
+      onSitePolicyCollected: isDocStatusComplete(meetingWorkflow.policyDocStatus),
+      onSitePaymentStatementCollected: isDocStatusComplete(meetingWorkflow.paymentDocStatus),
       onSiteInstitutionLinked: meetingAdminState.hometaxLinked || meetingAdminState.nhisLinked,
       onSiteClaimAgreementDone: meetingWorkflow.onSiteClaimAgreementDone,
-      onSiteReferralPrompted: meetingWorkflow.onSiteReferralPrompted,
+      onSiteReferralPrompted: referralResult !== 'none',
       preCallDone,
       preCallNote,
       preCallScheduledAt: meetingWorkflow.meetingTime,
@@ -2059,6 +2102,8 @@ function MeetingExecutionDetail({ item, onBack, onNavigate, type }: { item: any,
       claimTransferRequested: meetingWorkflow.claimTransferRequested,
       claimTransferReason: meetingWorkflow.claimTransferReason,
       claimTransferAt: meetingWorkflow.claimTransferAt,
+      policyDocStatus: meetingWorkflow.policyDocStatus,
+      paymentDocStatus: meetingWorkflow.paymentDocStatus,
       followupDate: meetingWorkflow.followupDate,
       followupLocation: meetingWorkflow.followupLocation,
       followupPurpose: meetingWorkflow.followupPurpose,
@@ -2067,14 +2112,19 @@ function MeetingExecutionDetail({ item, onBack, onNavigate, type }: { item: any,
       alternativeProposal: meetingWorkflow.alternativeProposal,
       withdrawalAt: meetingWorkflow.withdrawalAt,
       postMeetingNote: meetingWorkflow.postMeetingNote,
-      referralAsked: meetingWorkflow.referralAsked,
+      referralAsked: referralResult === 'success',
       memberSignupCompleted: meetingAdminState.memberSignupCompleted,
       hometaxLinked: meetingAdminState.hometaxLinked,
       hiraLinked: meetingAdminState.hiraLinked,
       nhisLinked: meetingAdminState.nhisLinked,
       c4uLinked: meetingAdminState.c4uLinked,
-      referralCount: getReferralContactCount(referralContacts),
-      referralContacts,
+      referralCount: totalReferralCount,
+      referralContacts: persistedReferralContacts,
+      assignmentStatus: 'unassigned',
+      assignedTeam: '',
+      assignedStaff: '',
+      regionLevel1: '',
+      regionLevel2: '',
       cxActionsCount: [
          meetingAdminState.memberSignupCompleted,
          meetingWorkflow.onSiteAppLinked,
@@ -2082,11 +2132,10 @@ function MeetingExecutionDetail({ item, onBack, onNavigate, type }: { item: any,
          meetingAdminState.hiraLinked,
          meetingAdminState.nhisLinked,
          meetingAdminState.c4uLinked,
-         meetingAdminState.threeDocSubmitted,
-         meetingWorkflow.onSitePolicyCollected,
-         meetingWorkflow.onSitePaymentStatementCollected,
-         meetingWorkflow.onSiteReferralPrompted,
-         getReferralContactCount(referralContacts) > 0,
+         isDocStatusComplete(meetingWorkflow.policyDocStatus),
+         isDocStatusComplete(meetingWorkflow.paymentDocStatus),
+         referralResult !== 'none',
+         totalReferralCount > 0,
       ].filter(Boolean).length,
       gloSignRequested: integrationStates.gloSignRequested,
       gloSignSigned: integrationStates.gloSignSigned,
@@ -2095,8 +2144,9 @@ function MeetingExecutionDetail({ item, onBack, onNavigate, type }: { item: any,
       postResultReported: hasValue(meetingWorkflow.postMeetingNote),
       postStatusChanged: isFinalMeetingResultSelected(selectedDetail),
       postContractInfoSaved: contractData.length > 0,
-      postThreeDocSubmitted: meetingAdminState.threeDocSubmitted,
-   }), [
+      postThreeDocSubmitted: false,
+      };
+   }, [
       contractData,
       designReviewStatus,
       integrationStates,
@@ -2105,6 +2155,7 @@ function MeetingExecutionDetail({ item, onBack, onNavigate, type }: { item: any,
       meetingWorkflow,
       preCallDone,
       preCallNote,
+      referralResult,
       referralContacts,
       recordingStarted,
       selectedDetail,
@@ -2121,17 +2172,6 @@ function MeetingExecutionDetail({ item, onBack, onNavigate, type }: { item: any,
          meetingDraft: getMeetingDraft(),
       });
    }, [getMeetingDraft, journey]);
-
-   const getMeetingGuardState = useCallback(() => {
-      const draft = getMeetingDraft();
-      const journeyPreview = getJourneyComputation();
-      const orderedItems = sortRequirementAlerts(journeyPreview.missingRequirements);
-      return getEffectiveBlocking({
-         items: orderedItems,
-         screen: 'meeting',
-         targetStatus: draft.selectedDetail,
-      });
-   }, [getJourneyComputation, getMeetingDraft]);
 
    const syncMeetingIntegrations = useCallback((draft: MeetingDraft) => {
       const now = new Date().toISOString().slice(0, 16).replace('T', ' ');
@@ -2179,10 +2219,10 @@ function MeetingExecutionDetail({ item, onBack, onNavigate, type }: { item: any,
       const closedStatuses = new Set([
          'contract-completed',
          'contract-failed',
-         'on-site-impossible',
-         'meeting-cancelled',
-         'no-show',
-         'uw-rejected',
+         'pre-meeting-cancel',
+         'pre-meeting-impossible',
+         'post-meeting-impossible',
+         'final-absent',
          'withdrawn',
       ]);
       const stageId = closedStatuses.has(draft.selectedDetail) ? 'closed' : 'meeting';
@@ -2233,37 +2273,24 @@ function MeetingExecutionDetail({ item, onBack, onNavigate, type }: { item: any,
          return;
       }
 
-      const guard = getMeetingGuardState();
-      if (guard.effectiveBlockingItems.length > 0) {
-         setGuardItems(guard.effectiveBlockingItems);
-         setGuardIndex(0);
-         setGuardModalOpen(true);
-         toast.error('필수 항목 누락으로 상태 변경을 진행할 수 없습니다.');
-         return;
-      }
-
       const journeyPreview = getJourneyComputation();
       const stageStatus = buildMeetingStageStatus(draft);
       ensureCurrentJourney();
       applyMeetingStatus(item.requestId, draft, stageStatus, journeyPreview.nextAction, '미팅팀');
       syncMeetingIntegrations(draft);
-      setGuardModalOpen(false);
       toast.success(`미팅 상태를 '${stageStatus.statusLabel}'로 반영했습니다.`);
-   }, [applyMeetingStatus, buildMeetingStageStatus, ensureCurrentJourney, getJourneyComputation, getMeetingDraft, getMeetingGuardState, item.requestId, syncMeetingIntegrations]);
+   }, [applyMeetingStatus, buildMeetingStageStatus, ensureCurrentJourney, getJourneyComputation, getMeetingDraft, item.requestId, syncMeetingIntegrations]);
 
-   const meetingGuardSummary = useMemo(() => getMeetingGuardState(), [getMeetingGuardState]);
    const contractResultSummary = useMemo(() => getContractResultSummary(contractData), [contractData]);
    const isContractSectionEnabled = selectedDetail === 'contract-completed';
    const claimHandoffItems = useMemo(
       () => [
-        { label: CLAIM_HANDOFF_LABELS[0], active: meetingAdminState.threeDocSubmitted },
-         { label: CLAIM_HANDOFF_LABELS[1], active: meetingWorkflow.onSitePolicyCollected },
-         { label: CLAIM_HANDOFF_LABELS[2], active: meetingWorkflow.onSitePaymentStatementCollected },
+         { label: CLAIM_HANDOFF_LABELS[0], status: meetingWorkflow.policyDocStatus },
+         { label: CLAIM_HANDOFF_LABELS[1], status: meetingWorkflow.paymentDocStatus },
       ],
       [
-         meetingAdminState.threeDocSubmitted,
-         meetingWorkflow.onSitePaymentStatementCollected,
-         meetingWorkflow.onSitePolicyCollected,
+         meetingWorkflow.paymentDocStatus,
+         meetingWorkflow.policyDocStatus,
       ],
    );
    const integrationItems = useMemo(
@@ -2285,7 +2312,7 @@ function MeetingExecutionDetail({ item, onBack, onNavigate, type }: { item: any,
       ],
    );
    const claimDocumentDoneCount = useMemo(
-      () => claimHandoffItems.filter((item) => item.active).length,
+      () => claimHandoffItems.filter((item) => isDocStatusComplete(item.status)).length,
       [claimHandoffItems],
    );
    const referralContactCount = useMemo(
@@ -2338,97 +2365,41 @@ function MeetingExecutionDetail({ item, onBack, onNavigate, type }: { item: any,
       ],
    );
 
-   const baseStepMissingByStep = useMemo<Record<MeetingStepNumber, string[]>>(
-      () => ({
-         1: [
-            !hasValue(meetingWorkflow.meetingTime) ? '시간 입력' : '',
-            !hasValue(meetingWorkflow.meetingLocation) ? '장소 입력' : '',
-            !meetingWorkflow.meetingConfirmed ? '확정 여부 체크' : '',
-         ].filter(Boolean),
-         2: [
-            !uploadedFileName ? '보험 분석 파일 업로드' : '',
-         ].filter(Boolean),
-         3: [
-            !meetingWorkflow.scriptReady ? '스크립트 작성 완료 체크' : '',
-         ].filter(Boolean),
-         4: [
-            !(integrationStates.gloSignRequested || integrationStates.gloSignSigned) ? '전자서명 발송 또는 서명완료' : '',
-         ].filter(Boolean),
-         5: [
-            !hasValue(meetingWorkflow.postMeetingNote) ? '결과 메모 입력' : '',
-            !isFinalMeetingResultSelected(selectedDetail) ? '최종 결과 상태 선택' : '',
-            selectedDetail === 'contract-completed' && contractData.length === 0 ? '계약 정보 등록' : '',
-            meetingWorkflow.claimTransferRequested && !meetingAdminState.threeDocSubmitted ? '3종 서류 확인' : '',
-            meetingWorkflow.claimTransferRequested && !meetingWorkflow.onSitePolicyCollected ? '증권 확인' : '',
-            meetingWorkflow.claimTransferRequested && !meetingWorkflow.onSitePaymentStatementCollected ? '지급내역서 확인' : '',
-         ].filter(Boolean),
-         6: [],
-      }),
-      [
-         contractData.length,
-         integrationStates.gloSignRequested,
-         meetingAdminState.threeDocSubmitted,
-         meetingWorkflow,
-         selectedDetail,
-         uploadedFileName,
-      ],
-   );
-
-   const guardStepMissingByStep = useMemo<Record<MeetingStepNumber, string[]>>(() => {
-      const base: Record<MeetingStepNumber, string[]> = { 1: [], 2: [], 3: [], 4: [], 5: [], 6: [] };
-      meetingGuardSummary.effectiveBlockingItems.forEach((item) => {
-         const section = resolveMeetingSection(item);
-         const step = SECTION_STEP_MAP[section];
-         const text = item.label || item.message;
-         if (text) base[step].push(text);
-      });
-      return base;
-   }, [meetingGuardSummary.effectiveBlockingItems]);
-
-   const stepMissingByStep = useMemo<Record<MeetingStepNumber, string[]>>(() => {
-      const steps = [1, 2, 3, 4, 5, 6] as MeetingStepNumber[];
-      const merged = {} as Record<MeetingStepNumber, string[]>;
-      steps.forEach((step) => {
-         merged[step] = [...new Set([...(baseStepMissingByStep[step] || []), ...(guardStepMissingByStep[step] || [])])];
-      });
-      return merged;
-   }, [baseStepMissingByStep, guardStepMissingByStep]);
-
    const getStepState = useCallback(
       (step: MeetingStepNumber): MeetingStepStateModel => {
-         const ownMissingItems = stepMissingByStep[step] || [];
-         if (step === 6) {
-            return {
-               step,
-               title: STEP_TITLE_MAP[step],
-               sectionId: STEP_SECTION_MAP[step],
-               status: meetingWorkflow.claimTransferRequested ? 'done' : 'available',
-               missingRequiredCount: 0,
-               missingItems: [],
-            };
-         }
+         const doneByStep: Record<MeetingStepNumber, boolean> = {
+            1: hasValue(meetingWorkflow.meetingTime) && meetingWorkflow.meetingConfirmed,
+            2: Boolean(uploadedFileName),
+            3: meetingWorkflow.scriptReady,
+            4: integrationStates.gloSignRequested || integrationStates.gloSignSigned,
+            5: meetingCompleteSections.every((section) => section.done),
+            6: meetingWorkflow.claimTransferRequested,
+         };
 
          return {
             step,
             title: STEP_TITLE_MAP[step],
             sectionId: STEP_SECTION_MAP[step],
-            status: ownMissingItems.length === 0 ? 'done' : 'available',
-            missingRequiredCount: ownMissingItems.length,
-            missingItems: ownMissingItems,
+            status: doneByStep[step] ? 'done' : 'available',
+            missingRequiredCount: 0,
+            missingItems: [],
          };
       },
-      [stepMissingByStep],
+      [
+         integrationStates.gloSignRequested,
+         integrationStates.gloSignSigned,
+         meetingCompleteSections,
+         meetingWorkflow.claimTransferRequested,
+         meetingWorkflow.meetingConfirmed,
+         meetingWorkflow.meetingTime,
+         meetingWorkflow.scriptReady,
+         uploadedFileName,
+      ],
    );
 
    const stepStates = useMemo<MeetingStepStateModel[]>(() => {
       const steps = [1, 2, 3, 4, 5, 6] as MeetingStepNumber[];
-      const states = steps.map((step) => getStepState(step));
-
-      const firstActionableIndex = states.findIndex((item) => item.status === 'available' && item.missingRequiredCount > 0);
-      if (firstActionableIndex >= 0) {
-         states[firstActionableIndex] = { ...states[firstActionableIndex], status: 'attention' };
-      }
-      return states;
+      return steps.map((step) => getStepState(step));
    }, [getStepState]);
 
    const stepStateMap = useMemo(() => {
@@ -2437,20 +2408,6 @@ function MeetingExecutionDetail({ item, onBack, onNavigate, type }: { item: any,
          return acc;
       }, {} as Record<MeetingStepNumber, MeetingStepStateModel>);
    }, [stepStates]);
-
-   const completedStepCount = stepStates.filter((item) => item.status === 'done').length;
-   const panelMissingCount = stepStates.reduce((count, item) => count + (item.status === 'done' ? 0 : item.missingRequiredCount), 0);
-   const panelMissingItems = useMemo(
-      () =>
-         stepStates.flatMap((state) =>
-            state.missingItems.map((message) => ({
-               step: state.step,
-               title: state.title,
-               message,
-            })),
-         ),
-      [stepStates],
-   );
 
    const handleContractSubmit = (data: ContractData) => {
       const timestamp = new Date().toISOString().slice(0, 16).replace('T', ' ');
@@ -2469,31 +2426,19 @@ function MeetingExecutionDetail({ item, onBack, onNavigate, type }: { item: any,
          editingContractIndex !== null
             ? contractData.map((contract, index) => (index === editingContractIndex ? normalizedContractData : contract))
             : [...contractData, normalizedContractData];
-      const shouldMarkContractCompleted = selectedGroup !== 'WON' || selectedDetail !== 'contract-completed';
 
       setContractData(nextContractData);
 
-      if (shouldMarkContractCompleted) {
-         setSelectedGroup('WON');
-         setSelectedDetail('contract-completed');
-      }
-
       persistMeetingDraft({
          ...getMeetingDraft(),
-         selectedGroup: shouldMarkContractCompleted ? 'WON' : selectedGroup,
-         selectedDetail: shouldMarkContractCompleted ? 'contract-completed' : selectedDetail,
          contractData: nextContractData,
          contractDataCount: nextContractData.length,
       });
 
-      if (shouldMarkContractCompleted) {
-         toast.success(
-            <div className="flex flex-col gap-1">
-               <span className="font-bold">계약 정보가 등록되었습니다!</span>
-               <span className="text-xs opacity-90">미팅 상태가 '계약 완료(청약 완료)'로 자동 변경되었습니다.</span>
-            </div>,
-            { duration: 4000 }
-         );
+      if (selectedDetail !== 'contract-completed') {
+         setShowContractConfirm(true);
+      } else {
+         toast.success('계약 정보가 등록되었습니다.');
       }
    };
 
@@ -2523,7 +2468,6 @@ function MeetingExecutionDetail({ item, onBack, onNavigate, type }: { item: any,
       : false;
 
    const subReasons = requiresSubReason ? SUB_REASON_OPTIONS[selectedDetail] || [] : [];
-   const showFollowupSubtypeSelector = selectedDetail === 'followup-in-progress';
 
    // Mock Data State for Consultation Info
    const [insuranceType] = useState('실손+종합');
@@ -2560,58 +2504,6 @@ function MeetingExecutionDetail({ item, onBack, onNavigate, type }: { item: any,
          toast.success('보상분석 파일이 업로드되었습니다.');
       }
    };
-
-   const scrollToGuardSection = useCallback((ref: React.RefObject<HTMLDivElement>, sectionId: string) => {
-      if (!ref.current) return;
-      ref.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      ref.current.setAttribute('tabindex', '-1');
-      ref.current.focus({ preventScroll: true });
-      setHighlightSection(sectionId);
-      setTimeout(() => setHighlightSection(null), 2000);
-   }, []);
-
-   const openMeetingSection = useCallback((sectionId: MeetingSectionId) => {
-      if (sectionId === 'status') {
-         scrollToGuardSection(statusRef, sectionId);
-         return;
-      }
-      if (sectionId === 'claimHandoff') {
-         scrollToGuardSection(claimHandoffRef, sectionId);
-         return;
-      }
-
-      setCenterTab(SECTION_TAB_MAP[sectionId]);
-      const anchorId = SECTION_ANCHOR_ID_MAP[sectionId];
-      window.setTimeout(() => {
-         const el = document.getElementById(anchorId);
-         if (!el) return;
-         el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-         setHighlightSection(sectionId);
-         window.setTimeout(() => setHighlightSection(null), 2000);
-      }, 80);
-   }, [scrollToGuardSection]);
-
-   const jumpToMeetingGuardItem = useCallback((index: number) => {
-      if (!guardItems.length) return;
-      const safeIndex = Math.min(Math.max(index, 0), guardItems.length - 1);
-      const targetAlert = guardItems[safeIndex];
-      setGuardIndex(safeIndex);
-      const sectionId = resolveMeetingSection(targetAlert);
-      openMeetingSection(sectionId);
-      toast.error('필수 항목을 완료해야 상태를 반영할 수 있습니다.');
-   }, [guardItems, openMeetingSection]);
-
-   const handleGuardPrev = useCallback(() => {
-      if (!guardItems.length) return;
-      const nextIndex = (guardIndex - 1 + guardItems.length) % guardItems.length;
-      jumpToMeetingGuardItem(nextIndex);
-   }, [guardIndex, guardItems, jumpToMeetingGuardItem]);
-
-   const handleGuardNext = useCallback(() => {
-      if (!guardItems.length) return;
-      const nextIndex = (guardIndex + 1) % guardItems.length;
-      jumpToMeetingGuardItem(nextIndex);
-   }, [guardIndex, guardItems, jumpToMeetingGuardItem]);
 
    const history = journey?.auditTrail.length
       ? journey.auditTrail.slice(0, 6).map((event) => ({
@@ -2678,199 +2570,142 @@ function MeetingExecutionDetail({ item, onBack, onNavigate, type }: { item: any,
             highlightSection === 'status' ? "ring-2 ring-rose-400 ring-offset-2 ring-offset-white border-slate-300" : "border-slate-200"
          )}
       >
-         <button
-            type="button"
-            onClick={() => setStatusSectionOpen(!statusSectionOpen)}
-            className="w-full px-3 py-2 flex items-center justify-between hover:bg-slate-50 transition-colors"
-         >
-            <div className="flex items-center gap-2 min-w-0">
-               <label className="text-[10px] font-bold text-slate-400 uppercase shrink-0">상태</label>
+         <div className="px-3 py-3 space-y-3">
+            <div className="flex items-center justify-between">
+               <label className="text-[10px] font-bold text-slate-400 uppercase">상태</label>
                <div className="flex items-center gap-1.5 min-w-0">
-                  {selectedGroup && (
-                     <span className={clsx(
-                        "inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-bold border",
-                        MEETING_LIFECYCLE[selectedGroup].activeColor
-                     )}>
-                        {React.cloneElement(MEETING_LIFECYCLE[selectedGroup].icon as React.ReactElement, { size: 10 })}
-                        {MEETING_LIFECYCLE[selectedGroup].label}
-                     </span>
-                  )}
                   {selectedDetail && (
                      <span className="rounded border border-blue-200 bg-blue-50 px-1.5 py-0.5 text-[10px] font-bold text-blue-700 truncate">
                         {MEETING_STATUS_LABELS[selectedDetail] || selectedDetail}
                      </span>
                   )}
-                  {selectedDetail === 'followup-in-progress' && selectedSubDetail && (
+                  {selectedSubDetail && (
                      <span className="rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-bold text-amber-700 truncate">
                         {selectedSubDetail}
                      </span>
                   )}
                </div>
             </div>
-            {statusSectionOpen ? <ChevronUp size={14} className="text-slate-400 shrink-0" /> : <ChevronDown size={14} className="text-slate-400 shrink-0" />}
-         </button>
 
-         {statusSectionOpen && (
-            <div className="px-3 pb-3 pt-1 border-t border-slate-100 space-y-2">
-               <div className="grid grid-cols-4 gap-1">
-                  {(['PENDING', 'NEGOTIATING', 'WON', 'LOST'] as StatusGroup[]).map((group) => {
-                     const isSelected = selectedGroup === group;
-                     const data = MEETING_LIFECYCLE[group];
-                     return (
-                        <button
-                           key={group}
-                           onClick={() => {
-                              setSelectedGroup(group);
-                              setSelectedDetail('');
-                              setSelectedSubDetail('');
-                           }}
-                           className={clsx(
-                              "h-7 flex items-center justify-center gap-1 px-1 rounded border transition-all text-[10px] font-bold",
-                              isSelected
-                                 ? data.activeColor + " shadow-sm"
-                                 : "bg-white border-slate-200 " + data.color
-                           )}
-                        >
-                           {React.cloneElement(data.icon as React.ReactElement, { size: 10 })}
-                           <span className="truncate">{data.label}</span>
-                        </button>
-                     );
-                  })}
+            <div className="flex border-b border-slate-200">
+               {(['PENDING', 'NEGOTIATING', 'CONTRACT_MGMT', 'WON', 'LOST'] as StatusGroup[]).map((group) => {
+                  const isSelected = selectedGroup === group;
+                  const data = MEETING_LIFECYCLE[group];
+
+                  return (
+                     <button
+                        key={group}
+                        type="button"
+                        onClick={() => {
+                           setSelectedGroup(group);
+                           setSelectedDetail('');
+                           setSelectedSubDetail('');
+                        }}
+                        className={clsx(
+                           'flex-1 py-2.5 text-[10px] font-bold flex items-center justify-center gap-1.5 border-b-2 transition-colors',
+                           isSelected
+                              ? 'border-current text-slate-800 bg-slate-50'
+                              : 'border-transparent text-slate-400 hover:text-slate-600 hover:bg-slate-50/50',
+                        )}
+                     >
+                        {React.cloneElement(data.icon as React.ReactElement<any>, { size: 12 })}
+                        {data.label}
+                     </button>
+                  );
+               })}
+            </div>
+
+            {selectedGroup && MEETING_LIFECYCLE[selectedGroup] && (
+               <div className="rounded-lg border border-slate-200 bg-slate-50/70 p-2 space-y-1.5">
+                  {MEETING_LIFECYCLE[selectedGroup].options.map((option) => (
+                     <button
+                        key={option.value}
+                        type="button"
+                        onClick={() => {
+                           setSelectedDetail(option.value);
+                           setSelectedSubDetail('');
+                        }}
+                        className={clsx(
+                           'flex w-full items-center justify-between rounded-md border px-2.5 py-2 text-left text-[11px] transition-all',
+                           selectedDetail === option.value
+                              ? 'border-blue-500 bg-white font-bold text-blue-700 ring-1 ring-blue-500'
+                              : 'border-slate-200 bg-white text-slate-600 hover:border-blue-300',
+                        )}
+                     >
+                        <span className="truncate">{option.label}</span>
+                        {selectedDetail === option.value && <Check size={11} className="shrink-0 text-blue-600" />}
+                     </button>
+                  ))}
                </div>
+            )}
 
-               {selectedGroup && (
-                  <div className="space-y-1">
-                     {MEETING_LIFECYCLE[selectedGroup].options.map((option) => (
+            {requiresSubReason && (
+               <div className="rounded-lg border border-slate-200 bg-white p-2.5">
+                  <div className="text-[9px] font-bold text-slate-500 mb-1">추가 사유 (필수)</div>
+                  <div className="flex flex-wrap gap-1">
+                     {subReasons.map((reason) => (
                         <button
-                           key={option.value}
-                           onClick={() => {
-                              setSelectedDetail(option.value);
-                              setSelectedSubDetail('');
-                              if (option.value === 'contract-completed') {
-                                 setContractCompletedPromptOpen(true);
-                              }
-                           }}
+                           key={reason}
+                           type="button"
+                           onClick={() => setSelectedSubDetail(reason)}
                            className={clsx(
-                              "w-full text-left px-2 py-1.5 text-[11px] rounded border transition-all flex items-center justify-between",
-                              selectedDetail === option.value
-                                 ? "bg-white border-blue-500 text-blue-700 font-bold ring-1 ring-blue-500"
-                                 : "bg-slate-50 border-slate-200 text-slate-600 hover:border-blue-300"
+                              'px-1.5 py-0.5 rounded text-[10px] border transition-all font-medium',
+                              selectedSubDetail === reason
+                                 ? 'bg-slate-700 text-white border-slate-700'
+                                 : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50',
                            )}
                         >
-                           <span className="truncate">{option.label}</span>
-                           {selectedDetail === option.value && <Check size={11} className="text-blue-600 shrink-0" />}
+                           {reason}
                         </button>
                      ))}
                   </div>
-               )}
+               </div>
+            )}
 
-               {requiresSubReason && (
-                  <div className="pt-1 border-t border-slate-200">
-                     <div className="text-[9px] font-bold text-slate-500 mb-1">추가 사유 (필수)</div>
-                     <div className="flex flex-wrap gap-1">
-                        {subReasons.map((reason) => (
-                           <button
-                              key={reason}
-                              onClick={() => setSelectedSubDetail(reason)}
-                              className={clsx(
-                                 "px-1.5 py-0.5 rounded text-[10px] border transition-all font-medium",
-                                 selectedSubDetail === reason
-                                    ? "bg-slate-700 text-white border-slate-700"
-                                    : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
-                              )}
-                           >
-                              {reason}
-                           </button>
-                        ))}
-                     </div>
-                  </div>
-               )}
+            {selectedDetail === 'second-meeting' && (
+               <div className="rounded-lg border border-slate-200 bg-white p-2.5 space-y-2">
+                  <p className="text-[10px] font-bold text-slate-600">2차 미팅 일정</p>
+                  <input
+                     type="datetime-local"
+                     className="h-9 w-full text-[11px] px-2.5 border border-slate-200 rounded bg-white focus:outline-none focus:ring-1 focus:ring-purple-400"
+                     value={meetingWorkflow.followupDate}
+                     onChange={(e) => updateMeetingWorkflow('followupDate', e.target.value)}
+                  />
+                  <input
+                     placeholder="2차 미팅 장소"
+                     className="h-9 w-full text-[11px] px-2.5 border border-slate-200 rounded bg-white focus:outline-none focus:ring-1 focus:ring-purple-400"
+                     value={meetingWorkflow.followupLocation}
+                     onChange={(e) => updateMeetingWorkflow('followupLocation', e.target.value)}
+                  />
+                  <input
+                     placeholder="2차 미팅 목적"
+                     className="h-9 w-full text-[11px] px-2.5 border border-slate-200 rounded bg-white focus:outline-none focus:ring-1 focus:ring-purple-400"
+                     value={meetingWorkflow.followupPurpose}
+                     onChange={(e) => updateMeetingWorkflow('followupPurpose', e.target.value)}
+                  />
+               </div>
+            )}
 
-               {showFollowupSubtypeSelector && (
-                  <div className="pt-2 border-t border-slate-200 space-y-2">
-                     <div>
-                        <div className="text-[9px] font-bold text-slate-500 mb-1">후속 유형 (필수)</div>
-                        <div className="flex flex-wrap gap-1">
-                           {FOLLOWUP_SUB_OPTIONS.map((option) => (
-                              <button
-                                 key={option}
-                                 type="button"
-                                 onClick={() => setSelectedSubDetail(option)}
-                                 className={clsx(
-                                    "px-2 py-1 rounded text-[10px] border transition-all font-medium",
-                                    selectedSubDetail === option
-                                       ? "bg-amber-500 text-white border-amber-500"
-                                       : "bg-white text-slate-600 border-slate-200 hover:bg-amber-50 hover:border-amber-300"
-                                 )}
-                              >
-                                 {option}
-                              </button>
-                           ))}
-                        </div>
-                     </div>
-
-                     {selectedSubDetail === '2차 미팅 예정' && (
-                        <div className="rounded-lg border border-slate-200 p-2.5 space-y-2">
-                           <p className="text-[10px] font-bold text-slate-600">2차 미팅 일정</p>
-                           <input
-                              type="datetime-local"
-                              className="h-9 w-full text-[11px] px-2.5 border border-slate-200 rounded bg-white focus:outline-none focus:ring-1 focus:ring-purple-400"
-                              value={meetingWorkflow.followupDate}
-                              onChange={(e) => updateMeetingWorkflow('followupDate', e.target.value)}
-                           />
-                           <input
-                              placeholder="2차 미팅 장소"
-                              className="h-9 w-full text-[11px] px-2.5 border border-slate-200 rounded bg-white focus:outline-none focus:ring-1 focus:ring-purple-400"
-                              value={meetingWorkflow.followupLocation}
-                              onChange={(e) => updateMeetingWorkflow('followupLocation', e.target.value)}
-                           />
-                           <input
-                              placeholder="2차 미팅 목적"
-                              className="h-9 w-full text-[11px] px-2.5 border border-slate-200 rounded bg-white focus:outline-none focus:ring-1 focus:ring-purple-400"
-                              value={meetingWorkflow.followupPurpose}
-                              onChange={(e) => updateMeetingWorkflow('followupPurpose', e.target.value)}
-                           />
-                        </div>
-                     )}
-
-                     {(selectedSubDetail === '서류 보완 대기' || selectedSubDetail === '고객 재연락 예정' || selectedSubDetail === '내부 검토 중' || selectedSubDetail === '장기 보류') && (
-                        <div className="rounded-lg border border-amber-200 bg-amber-50/50 p-2.5 space-y-2">
-                           <p className="text-[10px] font-bold text-amber-800">{selectedSubDetail} 메모</p>
-                           {selectedSubDetail === '고객 재연락 예정' && (
-                              <input
-                                 type="datetime-local"
-                                 className="h-9 w-full text-[11px] px-2.5 border border-amber-200 rounded bg-white focus:outline-none focus:ring-1 focus:ring-amber-400"
-                                 value={meetingWorkflow.followupDate}
-                                 onChange={(e) => updateMeetingWorkflow('followupDate', e.target.value)}
-                              />
-                           )}
-                           <textarea
-                              placeholder="후속 진행 내용을 남겨주세요."
-                              className="w-full min-h-[76px] text-[11px] px-2.5 py-2 border border-amber-200 rounded bg-white focus:outline-none focus:ring-1 focus:ring-amber-400 placeholder:text-slate-300 resize-none"
-                              value={meetingWorkflow.postMeetingNote}
-                              onChange={(e) => updateMeetingWorkflow('postMeetingNote', e.target.value)}
-                           />
-                        </div>
-                     )}
-                  </div>
-               )}
-
-               {selectedDetail === 'insurance-re-review' && (
-                  <div className="pt-2 border-t border-slate-200">
-                     <div className="rounded-lg border border-sky-200 bg-sky-50/60 p-2.5 space-y-2">
-                        <p className="text-[10px] font-bold text-sky-800">보험 재심사 메모</p>
-                        <textarea
-                           placeholder="재심사 사유, 요청 서류, 보험사 확인 포인트..."
-                           className="w-full min-h-[76px] text-[11px] px-2.5 py-2 border border-sky-200 rounded bg-white focus:outline-none focus:ring-1 focus:ring-sky-400 placeholder:text-slate-300 resize-none"
-                           value={meetingWorkflow.designReviewNote}
-                           onChange={(e) => updateMeetingWorkflow('designReviewNote', e.target.value)}
-                        />
-                     </div>
-                  </div>
-               )}
-
-            </div>
-         )}
+            {(selectedDetail === 'feedback-done' || selectedDetail === 'contract-delay') && (
+               <div className="rounded-lg border border-blue-200 bg-blue-50/40 p-2.5 space-y-2">
+                  <p className="text-[10px] font-bold text-blue-800">
+                     {selectedDetail === 'feedback-done' ? '피드백 내용' : '계약연기 사유'}
+                  </p>
+                  <textarea
+                     placeholder="사유"
+                     className="w-full min-h-[60px] text-[11px] px-2.5 py-2 border border-blue-200 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-400 placeholder:text-slate-300 resize-none"
+                     value={meetingWorkflow.designReviewNote}
+                     onChange={(e) => updateMeetingWorkflow('designReviewNote', e.target.value)}
+                  />
+                  <textarea
+                     placeholder="고객 소통 현황"
+                     className="w-full min-h-[60px] text-[11px] px-2.5 py-2 border border-blue-200 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-400 placeholder:text-slate-300 resize-none"
+                     value={meetingWorkflow.postMeetingNote}
+                     onChange={(e) => updateMeetingWorkflow('postMeetingNote', e.target.value)}
+                  />
+               </div>
+            )}
+         </div>
       </div>
    );
 
@@ -2910,29 +2745,9 @@ function MeetingExecutionDetail({ item, onBack, onNavigate, type }: { item: any,
             {/* ━━━ LEFT PANEL: 미팅 5단계 프로세스 ━━━ */}
             <div ref={leftPanelRef} className="relative flex min-h-0 w-full shrink-0 flex-col bg-white border-b border-slate-200 lg:w-auto lg:min-w-[312px] lg:flex-[1.35] lg:border-r lg:border-b-0">
                <div className="sticky top-0 z-10 shrink-0 border-b border-slate-100 bg-slate-50 px-3 py-2.5">
-                  <div className="flex items-center justify-between">
-                     <h2 className="font-bold text-[#1e293b] flex items-center gap-1.5 text-[12px]">
-                        <ClipboardCheck size={14} className="text-[#0f766e]" /> 미팅 프로세스
-                     </h2>
-                     <div className="flex items-center gap-2">
-                        {panelMissingCount > 0 && (
-                           <button
-                              type="button"
-                              onClick={() => setMissingModalOpen(true)}
-                              className="text-[9px] font-bold text-rose-600 bg-rose-50 border border-rose-200 rounded px-1.5 py-0.5 hover:bg-rose-100 transition-colors"
-                           >
-                              누락 {panelMissingCount}
-                           </button>
-                        )}
-                        <span className="text-[10px] font-bold text-slate-400">{completedStepCount}/6</span>
-                     </div>
-                  </div>
-                  <div className="mt-1.5 h-1 bg-slate-200 rounded-full overflow-hidden">
-                     <div
-                        className="h-full bg-[#0f766e] rounded-full transition-all duration-500"
-                        style={{ width: `${(completedStepCount / 6) * 100}%` }}
-                     />
-                  </div>
+                  <h2 className="font-bold text-[#1e293b] flex items-center gap-1.5 text-[12px]">
+                     <ClipboardCheck size={14} className="text-[#0f766e]" /> 미팅 프로세스
+                  </h2>
                </div>
 
                <div className="custom-scrollbar min-h-0 flex-1 overflow-y-auto p-3 pb-24">
@@ -2940,6 +2755,39 @@ function MeetingExecutionDetail({ item, onBack, onNavigate, type }: { item: any,
                   <div className="mt-3 space-y-2">
                      <StepItem step={1} title="미팅 확정" icon={<Calendar size={14} />} iconColor="text-indigo-600">
                         <div className="space-y-2">
+                           {consultationHandoff.hasAny && (
+                              <div className="rounded-lg border border-indigo-200 bg-indigo-50/70 px-3 py-3 space-y-2">
+                                 <div className="flex items-start justify-between gap-2">
+                                    <div>
+                                       <p className="text-[11px] font-bold text-indigo-900">상담팀 인계 정보</p>
+                                       <p className="mt-0.5 text-[10px] text-indigo-700">
+                                          상담 화면에서 저장된 구조화 정보입니다. 상담 스크립트는 미팅 화면으로 가져오지 않습니다.
+                                       </p>
+                                    </div>
+                                    <span className="rounded-full border border-indigo-200 bg-white px-2 py-0.5 text-[10px] font-bold text-indigo-700">
+                                       읽기 전용
+                                    </span>
+                                 </div>
+                                 <div className="grid gap-1.5 text-[11px] text-slate-700">
+                                    <div className="flex items-center justify-between gap-2 rounded bg-white/80 px-2 py-1.5">
+                                       <span className="text-slate-500">소개 고객</span>
+                                       <span className={clsx(
+                                          'font-bold',
+                                          consultationHandoff.hasReferral ? 'text-indigo-700' : 'text-slate-500'
+                                       )}>
+                                          {consultationHandoff.hasReferral ? '있음' : '없음'}
+                                       </span>
+                                    </div>
+                                    {consultationHandoff.referralNote && (
+                                       <div className="rounded bg-white/80 px-2 py-1.5">
+                                          <span className="text-slate-500">소개 메모</span>
+                                          <p className="mt-1 font-bold text-slate-700">{consultationHandoff.referralNote}</p>
+                                       </div>
+                                    )}
+                                 </div>
+                              </div>
+                           )}
+
                            {/* 일시 */}
                            <div className="space-y-1">
                               <span className="text-[10px] font-bold text-slate-400 uppercase">일시</span>
@@ -2953,7 +2801,7 @@ function MeetingExecutionDetail({ item, onBack, onNavigate, type }: { item: any,
 
                            {/* 장소 — 카카오 주소 검색 */}
                            <div className="space-y-1">
-                              <span className="text-[10px] font-bold text-slate-400 uppercase">장소</span>
+                              <span className="text-[10px] font-bold text-slate-400 uppercase">장소 (선택)</span>
                               {meetingWorkflow.meetingLocation ? (
                                  <div className="rounded border border-blue-200 bg-blue-50 px-2.5 py-2">
                                     <div className="flex items-start justify-between gap-1">
@@ -3038,48 +2886,72 @@ function MeetingExecutionDetail({ item, onBack, onNavigate, type }: { item: any,
                            {/* 동석자 */}
                            <div className="space-y-1">
                               <span className="text-[10px] font-bold text-slate-400 uppercase">동석자</span>
-                              <div className="flex items-center gap-1.5">
+                              <div className="grid grid-cols-2 gap-1.5">
                                  <input
-                                    value={companionInput}
-                                    onChange={(e) => setCompanionInput(e.target.value)}
-                                    placeholder="이름 입력 후 추가"
-                                    className="h-8 flex-1 text-[11px] px-2.5 border border-slate-200 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-400 placeholder:text-slate-300"
-                                    onKeyDown={(e) => {
-                                       if (e.key === 'Enter') {
-                                          const value = companionInput.trim();
-                                          if (!value || meetingWorkflow.companions.includes(value)) return;
-                                          updateMeetingWorkflow('companions', [...meetingWorkflow.companions, value]);
-                                          setCompanionInput('');
-                                       }
-                                    }}
+                                    value={companionDraft.name}
+                                    onChange={(e) => setCompanionDraft((current) => ({ ...current, name: e.target.value }))}
+                                    placeholder="이름 (필수)"
+                                    className="h-8 text-[11px] px-2.5 border border-slate-200 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-400 placeholder:text-slate-300"
+                                 />
+                                 <input
+                                    value={companionDraft.relationship || ''}
+                                    onChange={(e) => setCompanionDraft((current) => ({ ...current, relationship: e.target.value }))}
+                                    placeholder="관계 (선택)"
+                                    className="h-8 text-[11px] px-2.5 border border-slate-200 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-400 placeholder:text-slate-300"
+                                 />
+                                 <input
+                                    value={companionDraft.phone || ''}
+                                    onChange={(e) => setCompanionDraft((current) => ({ ...current, phone: e.target.value }))}
+                                    placeholder="연락처 (선택)"
+                                    className="h-8 text-[11px] px-2.5 border border-slate-200 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-400 placeholder:text-slate-300"
                                  />
                                  <button
                                     type="button"
                                     onClick={() => {
-                                       const value = companionInput.trim();
-                                       if (!value || meetingWorkflow.companions.includes(value)) return;
-                                       updateMeetingWorkflow('companions', [...meetingWorkflow.companions, value]);
-                                       setCompanionInput('');
+                                       const nextName = companionDraft.name.trim();
+                                       if (!nextName) return;
+                                       const exists = meetingWorkflow.companions.some((item) => item.name === nextName);
+                                       if (exists) return;
+                                       updateMeetingWorkflow('companions', [
+                                          ...meetingWorkflow.companions,
+                                          {
+                                             name: nextName,
+                                             relationship: companionDraft.relationship?.trim() || '',
+                                             phone: companionDraft.phone?.trim() || '',
+                                          },
+                                       ]);
+                                       setCompanionDraft({ name: '', relationship: '', phone: '' });
                                     }}
-                                    className="h-8 px-2.5 rounded border border-blue-300 bg-blue-50 text-[11px] font-bold text-blue-700 hover:bg-blue-100"
+                                    className="h-8 rounded border border-blue-300 bg-blue-50 text-[11px] font-bold text-blue-700 hover:bg-blue-100"
                                  >
                                     추가
                                  </button>
                               </div>
                               {meetingWorkflow.companions.length > 0 && (
-                                 <div className="flex flex-wrap gap-1">
-                                    {meetingWorkflow.companions.map((name) => (
-                                       <button
-                                          key={name}
-                                          type="button"
-                                          onClick={() =>
-                                             updateMeetingWorkflow('companions', meetingWorkflow.companions.filter((itemName) => itemName !== name))
-                                          }
-                                          className="inline-flex items-center gap-0.5 rounded-full border border-slate-300 bg-white px-2 py-0.5 text-[10px] text-slate-700"
+                                 <div className="space-y-1">
+                                    {meetingWorkflow.companions.map((companionInfo) => (
+                                       <div
+                                          key={`${companionInfo.name}-${companionInfo.phone || ''}`}
+                                          className="flex items-center justify-between rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-[10px] text-slate-700"
                                        >
-                                          {name}
-                                          <XCircle size={10} className="text-slate-400" />
-                                       </button>
+                                          <span className="truncate">
+                                             {companionInfo.name}
+                                             {companionInfo.relationship ? ` | ${companionInfo.relationship}` : ''}
+                                             {companionInfo.phone ? ` | ${companionInfo.phone}` : ''}
+                                          </span>
+                                          <button
+                                             type="button"
+                                             onClick={() =>
+                                                updateMeetingWorkflow(
+                                                   'companions',
+                                                   meetingWorkflow.companions.filter((item) => item !== companionInfo),
+                                                )
+                                             }
+                                             className="ml-2 shrink-0 text-slate-400 hover:text-rose-500"
+                                          >
+                                             <XCircle size={12} />
+                                          </button>
+                                       </div>
                                     ))}
                                  </div>
                               )}
@@ -3233,9 +3105,47 @@ function MeetingExecutionDetail({ item, onBack, onNavigate, type }: { item: any,
                                     <div className="flex items-center justify-between rounded-md bg-white px-2 py-1 text-[10px] text-slate-600">
                                        <span>연동/소개</span>
                                        <span className="font-bold text-slate-700">
-                                          {integrationItems.filter((item) => item.active).length}/{integrationItems.length} · {Math.max(referralContactCount, meetingAdminState.referralCount)}명
+                                          {integrationItems.filter((item) => item.active).length}/{integrationItems.length} · {referralResult === 'success' ? referralContactCount : 0}명
                                        </span>
                                     </div>
+                                 </div>
+                                 <div className="space-y-1">
+                                    <p className="text-[10px] font-bold text-slate-500 uppercase">소개 고객</p>
+                                    <div className="flex gap-1">
+                                       <button
+                                          type="button"
+                                          onClick={() => setReferralResult('fail')}
+                                          className={clsx(
+                                             'flex-1 rounded border px-2.5 py-1 text-xs font-bold transition-colors',
+                                             referralResult === 'fail'
+                                                ? 'border-rose-300 bg-rose-50 text-rose-700'
+                                                : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300',
+                                          )}
+                                       >
+                                          소개 실패
+                                       </button>
+                                       <button
+                                          type="button"
+                                          onClick={() => setReferralResult('success')}
+                                          className={clsx(
+                                             'flex-1 rounded border px-2.5 py-1 text-xs font-bold transition-colors',
+                                             referralResult === 'success'
+                                                ? 'border-emerald-300 bg-emerald-50 text-emerald-700'
+                                                : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300',
+                                          )}
+                                       >
+                                          소개 성공
+                                       </button>
+                                    </div>
+                                 </div>
+                                 <div className="space-y-1">
+                                    <p className="text-[10px] font-bold text-slate-500 uppercase">결과 메모</p>
+                                    <textarea
+                                       placeholder="특이사항, 다음 액션..."
+                                       className="w-full min-h-[64px] text-[11px] px-2.5 py-2 border border-slate-200 rounded bg-white focus:outline-none focus:ring-1 focus:ring-slate-400 placeholder:text-slate-300 resize-none"
+                                       value={meetingWorkflow.postMeetingNote}
+                                       onChange={(e) => updateMeetingWorkflow('postMeetingNote', e.target.value)}
+                                    />
                                  </div>
                                  <button
                                     type="button"
@@ -3247,7 +3157,7 @@ function MeetingExecutionDetail({ item, onBack, onNavigate, type }: { item: any,
                                           : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
                                     )}
                                  >
-                                    {allDone ? '✓ 후처리 완료' : '후처리 입력하기 →'}
+                                    {allDone ? '✓ 후처리 완료' : '상세 후처리 →'}
                                  </button>
                               </div>
                            );
@@ -3295,24 +3205,6 @@ function MeetingExecutionDetail({ item, onBack, onNavigate, type }: { item: any,
                </div>
 
                <div className="sticky bottom-0 z-10 border-t border-slate-200 bg-white/95 px-3 py-2 backdrop-blur-sm">
-                  {(meetingGuardSummary.effectiveBlockingItems.length > 0 || meetingGuardSummary.warningItems.length > 0) && (
-                     <div className="mb-1.5 flex items-center justify-end gap-1.5">
-                        {meetingGuardSummary.effectiveBlockingItems.length > 0 && (
-                           <button
-                              onClick={() => jumpToMeetingGuardItem(0)}
-                              className="inline-flex items-center gap-0.5 rounded-full border border-rose-200 bg-rose-50 px-1.5 py-0.5 text-[9px] font-bold text-rose-700"
-                           >
-                              <AlertOctagon size={10} /> 차단 {meetingGuardSummary.effectiveBlockingItems.length}
-                           </button>
-                        )}
-                        {meetingGuardSummary.warningItems.length > 0 && (
-                           <span className="inline-flex items-center gap-0.5 rounded-full border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[9px] font-bold text-amber-700">
-                              <AlertCircle size={10} /> 경고 {meetingGuardSummary.warningItems.length}
-                           </span>
-                        )}
-                     </div>
-                  )}
-
                   <div className="grid grid-cols-2 gap-1.5">
                      <button
                         onClick={handleMeetingDraftSave}
@@ -3322,13 +3214,7 @@ function MeetingExecutionDetail({ item, onBack, onNavigate, type }: { item: any,
                      </button>
                      <button
                         onClick={handleApplyMeetingStatus}
-                        disabled={meetingGuardSummary.effectiveBlockingItems.length > 0 || !isFinalMeetingResultSelected(selectedDetail)}
-                        className={clsx(
-                           "w-full h-9 rounded-lg font-bold transition-colors shadow-lg flex items-center justify-center gap-1.5 text-[12px]",
-                           meetingGuardSummary.effectiveBlockingItems.length > 0 || !isFinalMeetingResultSelected(selectedDetail)
-                              ? "bg-slate-300 text-white cursor-not-allowed"
-                              : "bg-[#1e293b] text-white hover:bg-slate-800",
-                        )}
+                        className="w-full h-9 rounded-lg font-bold transition-colors shadow-lg flex items-center justify-center gap-1.5 text-[12px] bg-[#1e293b] text-white hover:bg-slate-800"
                      >
                         <Save size={14} /> 상태 반영
                      </button>
@@ -3343,23 +3229,6 @@ function MeetingExecutionDetail({ item, onBack, onNavigate, type }: { item: any,
                   customer={customer}
                   activeTab={centerTab}
                   onTabChange={setCenterTab}
-                  consultationCheckData={{
-                     disposition,
-                     trustLevel,
-                     bestTime,
-                     decisionMaker,
-                     traitNote,
-                     companion,
-                     insuranceType,
-                     monthlyPremium,
-                     paymentStatus,
-                     contractor,
-                     joinPath: insuranceStatus === '있음' ? joinPath : '-',
-                     trafficAccident,
-                     surgery: surgery === '있음' && surgeryOptions.length > 0 ? surgeryOptions.join(', ') : surgery,
-                     criticalDisease,
-                     medication,
-                  }}
                   renderProfileSummary={() => (
                      <CustomerProfileSummary
                         customerName={item.customer}
@@ -3405,6 +3274,27 @@ function MeetingExecutionDetail({ item, onBack, onNavigate, type }: { item: any,
                            insuranceType: insuranceStatus === '있음' ? insuranceType : '미가입',
                            utmSource: 'UTM없음'
                         }}
+                     />
+                  )}
+                  renderConsultationChecklist={() => (
+                     <LiveRecordSection
+                        insuranceType={insuranceType}
+                        monthlyPremium={monthlyPremium ? `${monthlyPremium}만원` : ''}
+                        paymentStatus={paymentStatus}
+                        contractor={contractor}
+                        joinPath={insuranceStatus === '있음' ? joinPath : '-'}
+                        trafficAccident={trafficAccident}
+                        surgery={surgery === '있음' && surgeryOptions.length > 0 ? surgeryOptions.join(', ') : surgery}
+                        surgeryDetail={surgeryDetail}
+                        criticalDisease={criticalDisease}
+                        medication={medication}
+                        companion={companion}
+                        disposition={disposition}
+                        trustLevel={trustLevel}
+                        bestTime={bestTime}
+                        decisionMaker={decisionMaker}
+                        traitNote={traitNote}
+                        attachments={attachments}
                      />
                   )}
                   renderMeetingCompleteTab={() => (
@@ -3551,41 +3441,60 @@ function MeetingExecutionDetail({ item, onBack, onNavigate, type }: { item: any,
                                  <p className="mt-1 text-[11px] text-slate-400">
                                     {meetingWorkflow.claimTransferRequested ? '인계 진행 중' : '인계 전'}
                                  </p>
-                                 <div className="mt-3 space-y-2">
-                                    {claimHandoffItems.map((doc) => (
-                                       <button
-                                          key={doc.label}
-                                          type="button"
-                                          onClick={() => {
-                                             if (doc.label === '3종 서류') {
-                                                updateMeetingAdminState('threeDocSubmitted', !meetingAdminState.threeDocSubmitted);
-                                                return;
-                                             }
-                                             if (doc.label === '증권') {
-                                                updateMeetingWorkflow('onSitePolicyCollected', !meetingWorkflow.onSitePolicyCollected);
-                                                return;
-                                             }
-                                             updateMeetingWorkflow('onSitePaymentStatementCollected', !meetingWorkflow.onSitePaymentStatementCollected);
-                                          }}
-                                          className={clsx(
-                                             "flex w-full items-center justify-between rounded-lg border px-3 py-2.5 text-left transition-colors",
-                                             doc.active
-                                                ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                                                : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50",
-                                          )}
-                                       >
-                                          <div className="flex items-center gap-2">
-                                             <span
-                                                className={clsx(
-                                                   "inline-block h-2.5 w-2.5 rounded-full",
-                                                   doc.active ? "bg-emerald-500" : "bg-slate-300",
-                                                )}
-                                             />
-                                             <span className="text-[13px] font-semibold">{doc.label}</span>
+                                 <div className="mt-3 space-y-3">
+                                    {claimHandoffItems.map((doc) => {
+                                       const targetKey = doc.label === CLAIM_HANDOFF_LABELS[0] ? 'policyDocStatus' : 'paymentDocStatus';
+                                       const currentOrder = getDocStatusOrder(doc.status);
+
+                                       return (
+                                          <div key={doc.label} className="rounded-lg border border-slate-200 bg-slate-50/60 p-3">
+                                             <div className="flex items-center justify-between gap-2">
+                                                <span className="text-[13px] font-semibold text-slate-800">{doc.label}</span>
+                                                <span className={clsx(
+                                                   'rounded-full px-2 py-0.5 text-[10px] font-bold',
+                                                   doc.status === 'received'
+                                                      ? 'bg-emerald-100 text-emerald-700'
+                                                      : doc.status === 'sent'
+                                                         ? 'bg-sky-100 text-sky-700'
+                                                         : doc.status === 'requested'
+                                                            ? 'bg-amber-100 text-amber-700'
+                                                            : 'bg-slate-100 text-slate-500',
+                                                )}>
+                                                   {getDocStatusLabel(doc.status)}
+                                                </span>
+                                             </div>
+                                             <div className="mt-3 flex items-center gap-2">
+                                                {DOC_STATUS_STEPS.map((status, index) => {
+                                                   const completed = currentOrder >= index;
+                                                   const current = doc.status === status;
+
+                                                   return (
+                                                      <React.Fragment key={status}>
+                                                         <button
+                                                            type="button"
+                                                            onClick={() => updateMeetingWorkflow(targetKey, status)}
+                                                            className={clsx(
+                                                               'flex-1 rounded-lg border px-2 py-2 text-[11px] font-bold transition-colors',
+                                                               current
+                                                                  ? 'border-slate-900 bg-slate-900 text-white'
+                                                                  : completed
+                                                                     ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                                                                     : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50',
+                                                            )}
+                                                         >
+                                                            {getDocStatusLabel(status)}
+                                                         </button>
+                                                         {index < DOC_STATUS_STEPS.length - 1 && <ChevronRight size={12} className="shrink-0 text-slate-300" />}
+                                                      </React.Fragment>
+                                                   );
+                                                })}
+                                             </div>
+                                             {doc.status === 'received' && (
+                                                <p className="mt-2 text-[11px] text-slate-500">수취 완료 후 청구팀 자동 연동은 MVP에서 목 데이터로 반영합니다.</p>
+                                             )}
                                           </div>
-                                          <span className="text-[11px] font-bold">{doc.active ? '확인 완료' : '확인 필요'}</span>
-                                       </button>
-                                    ))}
+                                       );
+                                    })}
                                  </div>
                                  <textarea
                                     placeholder="청구 인계 사유 또는 전달 메모..."
@@ -3666,27 +3575,47 @@ function MeetingExecutionDetail({ item, onBack, onNavigate, type }: { item: any,
                                  <div className="flex items-start justify-between gap-3">
                                     <div>
                                        <p className="text-[12px] font-bold text-slate-800">소개 현황</p>
-                                       <p className="mt-1 text-[11px] text-slate-500">소개 요청 여부와 함께 이름, 연락처, 관계를 남길 수 있습니다.</p>
+                                       <p className="mt-1 text-[11px] text-slate-500">소개 실패/성공으로 단순화하고 성공일 때만 소개자를 추가합니다.</p>
                                     </div>
                                     <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-600">
-                                       {Math.max(referralContactCount, meetingAdminState.referralCount)}명
+                                       {referralResult === 'success' ? referralContactCount : 0}명
                                     </span>
                                  </div>
                                  <div className="mt-3 flex flex-wrap items-center gap-2">
-                                    <ToggleMiniCard
-                                       label={meetingWorkflow.onSiteReferralPrompted ? '소개 요청 완료' : '소개 요청 체크'}
-                                       active={meetingWorkflow.onSiteReferralPrompted}
-                                       onClick={() => updateMeetingWorkflow('onSiteReferralPrompted', !meetingWorkflow.onSiteReferralPrompted)}
-                                    />
-                                    <ToggleMiniCard
-                                       label={meetingWorkflow.referralAsked ? '소개 의사 확인' : '소개 의사 미확인'}
-                                       active={meetingWorkflow.referralAsked}
-                                       onClick={() => updateMeetingWorkflow('referralAsked', !meetingWorkflow.referralAsked)}
-                                    />
+                                    <button
+                                       type="button"
+                                       onClick={() => setReferralResult('fail')}
+                                       className={clsx(
+                                          'h-10 rounded border px-3 text-[12px] font-bold transition-colors',
+                                          referralResult === 'fail'
+                                             ? 'border-rose-300 bg-rose-50 text-rose-700'
+                                             : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50',
+                                       )}
+                                    >
+                                       소개 실패
+                                    </button>
+                                    <button
+                                       type="button"
+                                       onClick={() => setReferralResult('success')}
+                                       className={clsx(
+                                          'h-10 rounded border px-3 text-[12px] font-bold transition-colors',
+                                          referralResult === 'success'
+                                             ? 'border-emerald-300 bg-emerald-50 text-emerald-700'
+                                             : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50',
+                                       )}
+                                    >
+                                       소개 성공
+                                    </button>
                                     <button
                                        type="button"
                                        onClick={handleAddReferralContact}
-                                       className="h-10 rounded border border-slate-200 bg-white px-3 text-[12px] font-bold text-slate-600 hover:bg-slate-50"
+                                       disabled={referralResult !== 'success'}
+                                       className={clsx(
+                                          'h-10 rounded border px-3 text-[12px] font-bold transition-colors',
+                                          referralResult === 'success'
+                                             ? 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+                                             : 'cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400',
+                                       )}
                                     >
                                        소개자 추가
                                     </button>
@@ -3695,13 +3624,13 @@ function MeetingExecutionDetail({ item, onBack, onNavigate, type }: { item: any,
                                     <div className="flex items-center justify-between">
                                        <div>
                                           <p className="text-[11px] font-semibold text-slate-500">소개 인원</p>
-                                          <p className="mt-1 text-lg font-bold text-slate-800">{Math.max(referralContactCount, meetingAdminState.referralCount)}명</p>
+                                          <p className="mt-1 text-lg font-bold text-slate-800">{referralResult === 'success' ? referralContactCount : 0}명</p>
                                        </div>
                                        <p className="text-[11px] text-slate-400">입력된 소개자 기준으로 집계</p>
                                     </div>
                                  </div>
                                  <div className="mt-3 space-y-2">
-                                    {referralContacts.length > 0 ? (
+                                    {referralResult === 'success' && referralContacts.length > 0 ? (
                                        referralContacts.map((contact, index) => (
                                           <div key={contact.id} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
                                              <div className="mb-2 flex items-center justify-between">
@@ -3736,51 +3665,23 @@ function MeetingExecutionDetail({ item, onBack, onNavigate, type }: { item: any,
                                              </div>
                                           </div>
                                        ))
+                                    ) : referralResult === 'fail' ? (
+                                       <div className="rounded-lg border border-dashed border-rose-200 bg-rose-50/40 px-4 py-6 text-center text-[12px] text-rose-500">
+                                          소개 실패로 분기되었습니다. 소개자 추가는 비활성화됩니다.
+                                       </div>
                                     ) : (
                                        <div className="rounded-lg border border-dashed border-slate-200 bg-white px-4 py-6 text-center text-[12px] text-slate-400">
-                                          소개자가 생기면 `소개자 추가`로 이름, 연락처, 관계를 남겨주세요.
+                                          {referralResult === 'success'
+                                             ? '소개자가 생기면 `소개자 추가`로 이름, 연락처, 관계를 남겨주세요.'
+                                             : '소개 성공을 선택하면 소개자 입력 영역이 열립니다.'}
                                        </div>
                                     )}
                                  </div>
                               </div>
                         </div>
 
-                        {selectedDetail === 'no-show' && (
-                           <div className="space-y-3 rounded-lg border border-slate-200 p-3">
-                              <div className="space-y-2 rounded-lg border border-slate-200 p-3">
-                                 <p className="text-[12px] font-bold text-slate-600">후속 일정</p>
-                                 <input
-                                    type="datetime-local"
-                                    className="h-11 w-full text-[13px] px-3 border border-slate-200 rounded bg-white focus:outline-none focus:ring-1 focus:ring-purple-400"
-                                    value={meetingWorkflow.followupDate}
-                                    onChange={(e) => updateMeetingWorkflow('followupDate', e.target.value)}
-                                 />
-                                 <input
-                                    placeholder="후속 장소"
-                                    className="h-11 w-full text-[13px] px-3 border border-slate-200 rounded bg-white focus:outline-none focus:ring-1 focus:ring-purple-400"
-                                    value={meetingWorkflow.followupLocation}
-                                    onChange={(e) => updateMeetingWorkflow('followupLocation', e.target.value)}
-                                 />
-                                 <input
-                                    placeholder="후속 목적"
-                                    className="h-11 w-full text-[13px] px-3 border border-slate-200 rounded bg-white focus:outline-none focus:ring-1 focus:ring-purple-400"
-                                    value={meetingWorkflow.followupPurpose}
-                                    onChange={(e) => updateMeetingWorkflow('followupPurpose', e.target.value)}
-                                 />
-                              </div>
-
-                           </div>
-                        )}
-
-                        {(selectedDetail === 'meeting-cancelled' || selectedDetail === 'no-show' || selectedDetail === 'withdrawn') && (
+                        {(selectedDetail === 'pre-meeting-cancel' || selectedDetail === 'final-absent') && (
                            <div className="space-y-2 rounded-lg border border-slate-200 p-3">
-                              {selectedDetail === 'no-show' && (
-                                 <ToggleMiniCard
-                                    label="현장 도착 확인"
-                                    active={meetingWorkflow.arrivalChecked}
-                                    onClick={() => updateMeetingWorkflow('arrivalChecked', !meetingWorkflow.arrivalChecked)}
-                                 />
-                              )}
                               <textarea
                                  placeholder="연락 시도 로그 / 취소 채널 기록..."
                                  className="w-full min-h-[84px] text-[13px] px-3 py-2 border border-slate-200 rounded bg-white focus:outline-none focus:ring-1 focus:ring-purple-400 placeholder:text-slate-300 resize-none"
@@ -3790,19 +3691,10 @@ function MeetingExecutionDetail({ item, onBack, onNavigate, type }: { item: any,
                            </div>
                         )}
 
-                        {selectedDetail === 'uw-rejected' && (
-                           <textarea
-                              placeholder="대체 제안 / 대안 상품 안내..."
-                              className="w-full min-h-[84px] text-[13px] px-3 py-2 border border-slate-200 rounded bg-white focus:outline-none focus:ring-1 focus:ring-purple-400 placeholder:text-slate-300 resize-none"
-                              value={meetingWorkflow.alternativeProposal}
-                              onChange={(e) => updateMeetingWorkflow('alternativeProposal', e.target.value)}
-                           />
-                        )}
-
-                        {(selectedDetail === 'contract-failed' || selectedDetail === 'on-site-impossible') && (
+                        {(selectedDetail === 'contract-failed' || selectedDetail === 'post-meeting-impossible' || selectedDetail === 'pre-meeting-impossible') && (
                            <div className="space-y-2 rounded-lg border border-rose-200 bg-rose-50/40 p-3">
                               <p className="text-[12px] font-bold text-rose-800">
-                                 {selectedDetail === 'contract-failed' ? '계약실패 정리' : '현장불가 정리'}
+                                 {selectedDetail === 'contract-failed' ? '계약 실패 정리' : '진행 불가 정리'}
                               </p>
                               <p className="text-[11px] text-rose-700">
                                  {selectedSubDetail
@@ -3810,7 +3702,7 @@ function MeetingExecutionDetail({ item, onBack, onNavigate, type }: { item: any,
                                     : '사유를 먼저 선택해두면 상태 반영 전에 다시 확인하기 쉬워집니다.'}
                               </p>
                               <textarea
-                                 placeholder={selectedDetail === 'contract-failed' ? '실패 배경, 고객 반응, 재접촉 가능성...' : '현장 상황, 진행 불가 원인, 후속 조치...'}
+                                 placeholder={selectedDetail === 'contract-failed' ? '실패 배경, 고객 반응, 재접촉 가능성...' : '진행 불가 원인, 후속 조치...'}
                                  className="w-full min-h-[84px] text-[13px] px-3 py-2 border border-rose-200 rounded bg-white focus:outline-none focus:ring-1 focus:ring-rose-400 placeholder:text-slate-300 resize-none"
                                  value={meetingWorkflow.postMeetingNote}
                                  onChange={(e) => updateMeetingWorkflow('postMeetingNote', e.target.value)}
@@ -3819,12 +3711,20 @@ function MeetingExecutionDetail({ item, onBack, onNavigate, type }: { item: any,
                         )}
 
                         {selectedDetail === 'withdrawn' && (
-                           <input
-                              type="datetime-local"
-                              className="h-11 w-full text-[13px] px-3 border border-slate-200 rounded bg-white focus:outline-none focus:ring-1 focus:ring-purple-400"
-                              value={meetingWorkflow.withdrawalAt}
-                              onChange={(e) => updateMeetingWorkflow('withdrawalAt', e.target.value)}
-                           />
+                           <div className="space-y-2 rounded-lg border border-slate-200 p-3">
+                              <input
+                                 type="datetime-local"
+                                 className="h-11 w-full text-[13px] px-3 border border-slate-200 rounded bg-white focus:outline-none focus:ring-1 focus:ring-purple-400"
+                                 value={meetingWorkflow.withdrawalAt}
+                                 onChange={(e) => updateMeetingWorkflow('withdrawalAt', e.target.value)}
+                              />
+                              <textarea
+                                 placeholder="철회/해지 경위 메모..."
+                                 className="w-full min-h-[84px] text-[13px] px-3 py-2 border border-slate-200 rounded bg-white focus:outline-none focus:ring-1 focus:ring-purple-400 placeholder:text-slate-300 resize-none"
+                                 value={meetingWorkflow.callAttemptLog}
+                                 onChange={(e) => updateMeetingWorkflow('callAttemptLog', e.target.value)}
+                              />
+                           </div>
                         )}
 
                      </div>
@@ -3952,101 +3852,29 @@ function MeetingExecutionDetail({ item, onBack, onNavigate, type }: { item: any,
             }}
             initialData={editingContractIndex !== null ? contractData[editingContractIndex] : undefined}
          />
-         <TransitionGuardModal
-            open={guardModalOpen}
-            items={guardItems}
-            currentIndex={guardIndex}
-            onPrev={handleGuardPrev}
-            onNext={handleGuardNext}
-            onJump={jumpToMeetingGuardItem}
-            onClose={() => setGuardModalOpen(false)}
-         />
-         {contractCompletedPromptOpen && (
-            <div className="fixed inset-0 z-[68] flex items-center justify-center p-4">
-               <button
-                  type="button"
-                  className="absolute inset-0 bg-slate-900/35 backdrop-blur-sm"
-                  onClick={() => setContractCompletedPromptOpen(false)}
-               />
-               <div className="relative w-full max-w-sm rounded-2xl border border-slate-200 bg-white shadow-2xl overflow-hidden">
-                  <div className="border-b border-slate-100 bg-slate-50 px-4 py-3">
-                     <h3 className="text-sm font-bold text-slate-800">계약 등록 이동</h3>
-                     <p className="mt-0.5 text-[12px] text-slate-600">계약 등록을 하시겠습니까?</p>
-                  </div>
-                  <div className="flex items-center justify-end gap-2 px-4 py-3">
-                     <button
-                        type="button"
-                        onClick={() => setContractCompletedPromptOpen(false)}
-                        className="h-9 px-3 rounded border border-slate-300 bg-white text-[12px] font-bold text-slate-700 hover:bg-slate-50"
-                     >
-                        아니오
-                     </button>
-                     <button
-                        type="button"
-                        onClick={() => {
-                           setContractCompletedPromptOpen(false);
-                           setCenterTab('contractRegistration');
-                        }}
-                        className="h-9 px-3 rounded border border-emerald-300 bg-emerald-50 text-[12px] font-bold text-emerald-700 hover:bg-emerald-100"
-                     >
-                        예, 이동
-                     </button>
-                  </div>
-               </div>
-            </div>
-         )}
-         {missingModalOpen && (
-            <div className="fixed inset-0 z-[65] flex items-center justify-center p-4">
-               <button
-                  type="button"
-                  className="absolute inset-0 bg-slate-900/35 backdrop-blur-sm"
-                  onClick={() => setMissingModalOpen(false)}
-               />
-               <div className="relative w-full max-w-lg overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
-                  <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50 px-4 py-3">
-                     <div>
-                        <h3 className="text-sm font-bold text-slate-800">누락 항목 {panelMissingCount}개</h3>
-                        <p className="mt-0.5 text-[11px] text-slate-500">각 항목을 누르면 해당 영역으로 이동합니다.</p>
-                     </div>
-                     <button
-                        type="button"
-                        onClick={() => setMissingModalOpen(false)}
-                        className="rounded-full p-1.5 text-slate-400 hover:bg-white hover:text-slate-600"
-                     >
-                        <XCircle size={16} />
-                     </button>
-                  </div>
-
-                  <div className="max-h-[360px] overflow-y-auto p-3">
-                     {panelMissingItems.length === 0 ? (
-                        <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-[12px] font-semibold text-emerald-700">
-                           현재 누락 항목이 없습니다.
-                        </div>
-                     ) : (
-                        <div className="space-y-1.5">
-                           {panelMissingItems.map((item, index) => (
-                              <button
-                                 key={`${item.step}-${item.message}-${index}`}
-                                 type="button"
-                                 onClick={() => {
-                                    const state = stepStateMap[item.step];
-                                    if (state) {
-                                       openMeetingSection(state.sectionId);
-                                    }
-                                    setMissingModalOpen(false);
-                                 }}
-                                 className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-left hover:bg-slate-50"
-                              >
-                                 <p className="text-[11px] font-bold text-slate-700">{item.step}단계 · {item.title}</p>
-                                 <p className="mt-0.5 text-[11px] text-slate-600">{item.message}</p>
-                              </button>
-                           ))}
-                        </div>
-                     )}
-                  </div>
-               </div>
-            </div>
-         )}
+         <AlertDialog open={showContractConfirm} onOpenChange={setShowContractConfirm}>
+            <AlertDialogContent>
+               <AlertDialogHeader>
+                  <AlertDialogTitle>계약 완료 상태 변경</AlertDialogTitle>
+                  <AlertDialogDescription>
+                     계약이 등록되었습니다. 상태값을 &quot;계약 완료&quot;로 변경하시겠습니까?
+                  </AlertDialogDescription>
+               </AlertDialogHeader>
+               <AlertDialogFooter>
+                  <AlertDialogCancel>나중에</AlertDialogCancel>
+                  <AlertDialogAction
+                     onClick={() => {
+                        setSelectedGroup('WON');
+                        setSelectedDetail('contract-completed');
+                        setShowContractConfirm(false);
+                        toast.success('계약 완료로 상태가 변경되었습니다.');
+                     }}
+                  >
+                     변경하기
+                  </AlertDialogAction>
+               </AlertDialogFooter>
+            </AlertDialogContent>
+         </AlertDialog>
       </div>
    );
 }

@@ -47,12 +47,17 @@ const DB_CATEGORY_STYLE: Record<DbCategory, string> = {
   intro: 'bg-violet-50 text-violet-700 border-violet-200',
 };
 
-const DB_FILTER_TABS = [
-  { key: 'all' as const, label: '전체' },
-  { key: 'possible' as const, label: '가능DB' },
-  { key: 'compensation' as const, label: '보상DB' },
-  { key: 'referral' as const, label: '소개DB' },
-  { key: 'intro' as const, label: '인트로DB' },
+function getDisplayDbType(category: DbCategory): { label: string; className: string } {
+  if (category === 'referral') return { label: '소개 DB', className: 'border-green-200 bg-green-50 text-green-700' };
+  return { label: '일반 DB', className: 'border-blue-200 bg-blue-50 text-blue-700' };
+}
+
+type DbFilterKey = '일반DB' | '소개DB' | '미배정';
+
+const DB_FILTER_TABS: { key: DbFilterKey; label: string }[] = [
+  { key: '일반DB', label: '일반 DB' },
+  { key: '소개DB', label: '소개 DB' },
+  { key: '미배정', label: '미배정' },
 ];
 
 const MOCK_ASSIGNEES = [
@@ -126,7 +131,7 @@ export function Leads() {
   const [periodPreset, setPeriodPreset] = useState<PerformancePeriodPreset>('all');
   const [customPeriodStartDate, setCustomPeriodStartDate] = useState(defaultCustomPeriodRange.startDate);
   const [customPeriodEndDate, setCustomPeriodEndDate] = useState(defaultCustomPeriodRange.endDate);
-  const [dbFilter, setDbFilter] = useState<'all' | DbCategory>('all');
+  const [dbFilter, setDbFilter] = useState<DbFilterKey>('일반DB');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [selectMode, setSelectMode] = useState(false);
   const [selectedMemberIds, setSelectedMemberIds] = useState<Set<string>>(new Set());
@@ -159,20 +164,20 @@ export function Leads() {
     [leadsData, periodRange]
   );
 
-  const filteredLeads = useMemo(
-    () => dbFilter === 'all' ? periodFiltered : periodFiltered.filter(l => l.dbCategory === dbFilter),
-    [dbFilter, periodFiltered]
-  );
+  const filteredLeads = useMemo(() => {
+    if (dbFilter === '소개DB') return periodFiltered.filter(l => l.dbCategory === 'referral');
+    if (dbFilter === '미배정') return periodFiltered.filter(l => l.owner === '-' || l.owner === '');
+    // 일반DB: possible, compensation, intro
+    return periodFiltered.filter(l => l.dbCategory !== 'referral');
+  }, [dbFilter, periodFiltered]);
 
   const dbCounts = useMemo(() => ({
-    all: periodFiltered.length,
-    possible: periodFiltered.filter(l => l.dbCategory === 'possible').length,
-    compensation: periodFiltered.filter(l => l.dbCategory === 'compensation').length,
-    referral: periodFiltered.filter(l => l.dbCategory === 'referral').length,
-    intro: periodFiltered.filter(l => l.dbCategory === 'intro').length,
+    '일반DB': periodFiltered.filter(l => l.dbCategory !== 'referral').length,
+    '소개DB': periodFiltered.filter(l => l.dbCategory === 'referral').length,
+    '미배정': periodFiltered.filter(l => l.owner === '-' || l.owner === '').length,
   }), [periodFiltered]);
 
-  const isReferralTab = dbFilter === 'referral';
+  const isReferralTab = dbFilter === '소개DB';
 
   const toggleSelect = (id: string) => {
     setSelectedIds(prev => {
@@ -348,36 +353,42 @@ export function Leads() {
 
       {/* DB Type Filter Tabs */}
       <div className="px-6 pt-3 pb-0 border-b border-slate-200 bg-white flex gap-1">
-        {DB_FILTER_TABS.map(tab => (
-          <button
-            key={tab.key}
-            onClick={() => {
-              setDbFilter(tab.key);
-              setSelectedIds(new Set());
-              setSelectedMemberIds(new Set());
-              setShowDistributionPreview(false);
-              setShowBatchModal(false);
-              setBatchAssignee('');
-              if (tab.key === 'referral') {
-                setSelectMode(false);
-              }
-            }}
-            className={clsx(
-              'px-4 py-2 text-xs font-bold rounded-t border-b-2 transition-colors',
-              dbFilter === tab.key
-                ? 'text-[#1e293b] border-[#1e293b] bg-slate-50'
-                : 'text-slate-400 border-transparent hover:text-slate-600 hover:bg-slate-50'
-            )}
-          >
-            {tab.label}
-            <span className={clsx(
-              'ml-1.5 px-1.5 py-0.5 rounded-full text-[10px]',
-              dbFilter === tab.key ? 'bg-[#1e293b] text-white' : 'bg-slate-100 text-slate-400'
-            )}>
-              {dbCounts[tab.key]}
-            </span>
-          </button>
-        ))}
+        {DB_FILTER_TABS.map(tab => {
+          const count = dbCounts[tab.key];
+          const isUnassigned = tab.key === '미배정';
+          return (
+            <button
+              key={tab.key}
+              onClick={() => {
+                setDbFilter(tab.key);
+                setSelectedIds(new Set());
+                setSelectedMemberIds(new Set());
+                setShowDistributionPreview(false);
+                setShowBatchModal(false);
+                setBatchAssignee('');
+                if (tab.key === '소개DB') {
+                  setSelectMode(false);
+                }
+              }}
+              className={clsx(
+                'px-4 py-2 text-xs font-bold rounded-t border-b-2 transition-colors',
+                dbFilter === tab.key
+                  ? 'text-[#1e293b] border-[#1e293b] bg-slate-50'
+                  : 'text-slate-400 border-transparent hover:text-slate-600 hover:bg-slate-50'
+              )}
+            >
+              {tab.label}
+              <span className={clsx(
+                'ml-1.5 px-1.5 py-0.5 rounded-full text-[10px]',
+                isUnassigned && count > 0
+                  ? dbFilter === tab.key ? 'bg-rose-600 text-white' : 'bg-rose-100 text-rose-600'
+                  : dbFilter === tab.key ? 'bg-[#1e293b] text-white' : 'bg-slate-100 text-slate-400'
+              )}>
+                {isUnassigned ? `${count}건` : count}
+              </span>
+            </button>
+          );
+        })}
       </div>
 
       {selectMode && !isReferralTab && (
@@ -400,44 +411,73 @@ export function Leads() {
           <div className="mt-4 grid gap-4 lg:grid-cols-[320px_minmax(0,1fr)]">
             <div className="rounded-xl border border-slate-200 bg-white p-4">
               <div className="text-xs font-bold text-slate-600 mb-3">콜팀원 선택</div>
-              <div className="space-y-2">
-                {MOCK_CALL_MEMBERS.map((member) => (
-                  <label key={member.id} className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700">
-                    <div className="flex items-center gap-3">
-                      <input
-                        type="checkbox"
-                        checked={selectedMemberIds.has(member.id)}
-                        onChange={() => toggleMemberSelect(member.id)}
-                        className="rounded border-slate-300"
-                      />
-                      <span className="font-medium">{member.name}</span>
-                    </div>
-                    <span className="text-xs text-slate-500">현재 {member.currentCount}건</span>
-                  </label>
-                ))}
+              <div className="flex flex-wrap gap-2 max-h-40 overflow-y-auto p-1">
+                {MOCK_CALL_MEMBERS.map((member) => {
+                  const selected = selectedMemberIds.has(member.id);
+                  return (
+                    <button
+                      key={member.id}
+                      onClick={() => toggleMemberSelect(member.id)}
+                      className={clsx(
+                        'px-3 py-1.5 rounded-full text-xs font-bold border transition-colors',
+                        selected
+                          ? 'bg-blue-600 text-white border-blue-600'
+                          : 'bg-white text-slate-600 border-slate-200 hover:border-blue-300'
+                      )}
+                    >
+                      {member.name}
+                      <span className={clsx('ml-1.5', selected ? 'text-blue-200' : 'text-slate-400')}>
+                        {member.currentCount}건
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
             <div className="rounded-xl border border-slate-200 bg-white p-4">
               <div className="text-xs font-bold text-slate-600 mb-3">배분 미리보기</div>
               {showDistributionPreview && distributionPreview.length > 0 ? (
-                <div className="overflow-hidden rounded-lg border border-slate-200">
-                  <table className="w-full text-sm">
-                    <thead className="bg-slate-50 text-xs text-slate-500">
+                <div className="overflow-auto max-h-64 rounded-lg border border-slate-200">
+                  <table className="w-full text-xs">
+                    <thead className="bg-slate-50 text-slate-500 sticky top-0">
                       <tr>
-                        <th className="px-3 py-2 text-left font-medium">팀원명</th>
-                        <th className="px-3 py-2 text-left font-medium">배정 건수</th>
-                        <th className="px-3 py-2 text-left font-medium">배정될 접수ID 목록</th>
+                        <th className="px-3 py-2 text-left font-medium">배정자</th>
+                        <th className="px-3 py-2 text-left font-medium">접수ID</th>
+                        <th className="px-3 py-2 text-left font-medium">고객명</th>
+                        <th className="px-3 py-2 text-left font-medium">DB유형</th>
+                        <th className="px-3 py-2 text-left font-medium">지역</th>
+                        <th className="px-3 py-2 text-left font-medium">접수일</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                      {distributionPreview.map((row) => (
-                        <tr key={row.memberId}>
-                          <td className="px-3 py-2 font-medium text-slate-700">{row.memberName}</td>
-                          <td className="px-3 py-2 text-slate-600">{row.assignedCount}건</td>
-                          <td className="px-3 py-2 text-slate-600">{row.leadIds.join(', ') || '-'}</td>
-                        </tr>
-                      ))}
+                      {distributionPreview.map((row) =>
+                        row.leadIds.map((leadId, idx) => {
+                          const lead = leadsData.find(l => l.id === leadId);
+                          if (!lead) return null;
+                          return (
+                            <tr key={leadId}>
+                              <td className="px-3 py-2 font-medium text-slate-700">
+                                {idx === 0 ? (
+                                  <span className="inline-flex items-center gap-1">
+                                    {row.memberName}
+                                    <span className="text-slate-400">({row.assignedCount}건)</span>
+                                  </span>
+                                ) : null}
+                              </td>
+                              <td className="px-3 py-2 font-mono text-slate-500">{lead.id}</td>
+                              <td className="px-3 py-2 font-medium text-slate-700">{lead.name}</td>
+                              <td className="px-3 py-2">
+                                <span className={clsx("px-1.5 py-0.5 rounded text-[10px] font-bold border", getDisplayDbType(lead.dbCategory).className)}>
+                                  {getDisplayDbType(lead.dbCategory).label}
+                                </span>
+                              </td>
+                              <td className="px-3 py-2 text-slate-600">{lead.region}</td>
+                              <td className="px-3 py-2 text-slate-500">{lead.date.slice(0, 10)}</td>
+                            </tr>
+                          );
+                        })
+                      )}
                     </tbody>
                   </table>
                 </div>
@@ -471,7 +511,7 @@ export function Leads() {
               <th className="px-6 py-3 font-medium">고객명</th>
               <th className="px-6 py-3 font-medium">DB유형</th>
               <th className="px-6 py-3 font-medium">나이</th>
-              <th className="px-6 py-3 font-medium">지역(추정)</th>
+              <th className="px-6 py-3 font-medium">신청 지역</th>
               <th className="px-6 py-3 font-medium">동의여부</th>
               <th className="px-6 py-3 font-medium">상태</th>
               <th className="px-6 py-3 font-medium">담당자</th>
@@ -506,8 +546,8 @@ export function Leads() {
                 </td>
                 <td className="px-6 py-4 font-bold text-[#1e293b]">{item.name}</td>
                 <td className="px-6 py-4">
-                  <span className={clsx("inline-flex px-2 py-0.5 rounded text-xs font-bold border", DB_CATEGORY_STYLE[item.dbCategory])}>
-                    {DB_CATEGORY_LABEL[item.dbCategory]}
+                  <span className={clsx("inline-flex px-2 py-0.5 rounded text-xs font-bold border", getDisplayDbType(item.dbCategory).className)}>
+                    {getDisplayDbType(item.dbCategory).label}
                   </span>
                 </td>
                 <td className="px-6 py-4">
@@ -520,9 +560,15 @@ export function Leads() {
                 </td>
                 <td className="px-6 py-4 text-slate-600">{item.region}</td>
                 <td className="px-6 py-4">
-                   <div className="flex gap-1">
-                      <span className={clsx("size-2 rounded-full", item.marketing_consent ? "bg-green-500" : "bg-slate-300")} title="마케팅 동의"></span>
-                      <span className={clsx("size-2 rounded-full", item.terms_consent ? "bg-green-500" : "bg-slate-300")} title="약관 동의"></span>
+                   <div className="flex flex-col gap-0.5">
+                      <span className={clsx("flex items-center gap-1 text-[10px] font-medium", item.marketing_consent ? "text-green-700" : "text-slate-400")}>
+                        <span className={clsx("size-1.5 rounded-full shrink-0", item.marketing_consent ? "bg-green-500" : "bg-slate-300")} />
+                        마케
+                      </span>
+                      <span className={clsx("flex items-center gap-1 text-[10px] font-medium", item.terms_consent ? "text-green-700" : "text-slate-400")}>
+                        <span className={clsx("size-1.5 rounded-full shrink-0", item.terms_consent ? "bg-green-500" : "bg-slate-300")} />
+                        개인
+                      </span>
                    </div>
                 </td>
                 <td className="px-6 py-4">

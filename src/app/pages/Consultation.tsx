@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useMemo } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { 
   Filter, 
   Save, 
@@ -13,27 +13,25 @@ import {
   Users,
   ListTodo,
   Globe,
-  CalendarDays,
-  MapPin,
-  DollarSign,
   ClipboardCheck,
   Mic,
-  FileSearch,
   Bell,
+  Lock,
+  RotateCcw,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { format, subDays } from 'date-fns';
 import { toast } from 'sonner';
 import { useRole } from '@/app/auth/RoleContext';
 import { useJourneyStore } from '@/app/journey/JourneyContext';
-import { detectCriticalCondition, evaluateCutRules } from '@/app/journey/rules';
-import { MOCK_DATA, getHiraPreFill } from '@/app/mockData';
+import { DEFAULT_CONSULTATION_DRAFT } from '@/app/journey/mockJourneys';
+import { MOCK_DATA } from '@/app/mockData';
 import { RefundAndMeetingInfo } from '@/app/components/RefundAndMeetingInfo';
 import { CustomerInputSection } from '@/app/components/CustomerInputSection';
 import { HealthCheckSection } from '@/app/components/HealthCheckSection';
 import { CustomerProfileSummary } from '@/app/components/CustomerProfileSummary';
-import { StepStageSelector, ValidationState } from '@/app/components/StepStageSelector';
-import { FileAttachmentSection, FileAttachment } from '@/app/components/FileAttachmentSection';
+import { StepStageSelector } from '@/app/components/StepStageSelector';
+import { FileAttachmentSection, type FileAttachment, type FileSlot } from '@/app/components/FileAttachmentSection';
 import LiveRecordSection from '@/imports/Container-168-10370';
 import { CustomerDetailPanel } from '@/app/components/CustomerDetailPanel';
 import { ListPeriodControls } from '@/app/components/ListPeriodControls';
@@ -71,6 +69,25 @@ function formatConsultationRegion(address?: string) {
   }
 
   return address.split(' ').slice(0, 2).join(' ');
+}
+
+const CONSULTATION_ALLOWED_GANGWON_AREAS = ['철원', '화천', '춘천', '원주', '횡성'];
+
+function isUnsupportedConsultationRegion(address?: string) {
+  if (!address) {
+    return false;
+  }
+
+  const [province = '', city = ''] = address.split(' ');
+  if (province.includes('제주')) {
+    return true;
+  }
+
+  if (!province.includes('강원')) {
+    return false;
+  }
+
+  return !CONSULTATION_ALLOWED_GANGWON_AREAS.some((allowedArea) => city.includes(allowedArea));
 }
 
 const CONSULTATION_STEPS = [
@@ -411,7 +428,7 @@ function ConsultationList({
           <div className="p-6">
             <EmployeeStepMatrixOverview
               items={visibleStaffItems}
-              steps={CONSULTATION_STEPS}
+              steps={[...CONSULTATION_STEPS]}
               emptyMessage="기간 내 확인할 상담 담당자 데이터가 없습니다."
               onSelectOwner={onSelectStaffOwner}
             />
@@ -461,14 +478,20 @@ function ConsultationList({
                    </td>
                    <td className="px-6 py-4 text-slate-600">{item.date}</td>
                    <td className="px-6 py-4">
-                     <span className={clsx(
-                        "inline-flex px-2 py-0.5 rounded border text-xs font-bold",
-                        item.result === '거절' ? "bg-rose-50 text-rose-700 border-rose-100" :
-                        item.status === '완료' ? "bg-emerald-50 text-emerald-700 border-emerald-100" :
-                        "bg-blue-50 text-blue-700 border-blue-100"
-                     )}>
-                       {item.status === '완료' ? item.result : item.status}
-                     </span>
+                     {(() => {
+                       const stepMeta = getConsultationStepMeta(item);
+                       const statusLabel = item.status === '완료' ? item.result : item.status;
+                       const statusColor =
+                         item.result === '거절' ? "text-rose-600" :
+                         item.status === '완료' ? "text-emerald-600" :
+                         "text-blue-600";
+                       return (
+                         <div className="flex flex-col gap-0.5">
+                           <span className="text-[10px] text-slate-400">{stepMeta.stageLabel}</span>
+                           <span className={clsx("text-xs font-bold", statusColor)}>{statusLabel}</span>
+                         </div>
+                       );
+                     })()}
                    </td>
                    <td className="px-6 py-4 text-slate-500 text-xs truncate max-w-[200px]">{item.content}</td>
                    <td className="px-6 py-4 text-right">
@@ -603,7 +626,7 @@ function ConsultationStaffDetailPage({
         <EmployeeStepOwnerDetail
           ownerName={ownerName}
           items={staffItems}
-          steps={CONSULTATION_STEPS}
+          steps={[...CONSULTATION_STEPS]}
           stageColumnLabel="상담 단계"
           summaryColumnLabel="상담 메모"
           dateColumnLabel="배정일"
@@ -618,7 +641,7 @@ function ConsultationStaffDetailPage({
 // --- Layout Components & Data ---
 
 function ConsultationDetail({ item, onBack, type }: { item: any, onBack: () => void, type?: 'refund' | 'simple' }) {
-   const { patchJourney } = useJourneyStore();
+   const { patchJourney, saveConsultationDraft } = useJourneyStore();
    const { currentRole, roleLabel } = useRole();
    // Form State
    const [activeTab, setActiveTab] = useState('script1');
@@ -656,103 +679,83 @@ function ConsultationDetail({ item, onBack, type }: { item: any, onBack: () => v
    const [selectedStatus, setSelectedStatus] = useState<string>('waiting');
    const [selectedReason, setSelectedReason] = useState<string>('');
    
-   // 미팅 예약 (3차 TM) 필수 항목
-   const [refundEstimate, setRefundEstimate] = useState('');
-   const [feeNotified, setFeeNotified] = useState(false);
-   const [meetingDate, setMeetingDate] = useState('');
-   const [meetingTime, setMeetingTime] = useState('');
-   const [meetingLocation, setMeetingLocation] = useState('');
+   // 소개 인계 메모
+   const [hasReferral, setHasReferral] = useState(false);
+   const [referralNote, setReferralNote] = useState('');
    
    // 인계 체크리스트
-   const [recording1stAttached, setRecording1stAttached] = useState(false);
-   const [recording2ndAttached, setRecording2ndAttached] = useState(false);
-   const [simpyeongwonAttached, setSimpyeongwonAttached] = useState(false);
-   const [handoffMemo, setHandoffMemo] = useState('');
+   const [fileSlots, setFileSlots] = useState<FileSlot[]>([
+      { id: 'rec1', label: '1차 녹취파일', required: true, file: null },
+      { id: 'rec2', label: '2차 녹취파일', required: true, file: null },
+      { id: 'etc', label: '기타', required: false, file: null },
+   ]);
    const [absentAlimtalkSent, setAbsentAlimtalkSent] = useState(false);
+   const [consultationMemo, setConsultationMemo] = useState('');
    
    const [disposition, setDisposition] = useState<string>('중립');
    const [trustLevel, setTrustLevel] = useState<string>('보통');
    const [bestTime, setBestTime] = useState<string>('무관');
    const [decisionMaker, setDecisionMaker] = useState<string>('본인');
    const [traitNote, setTraitNote] = useState<string>('상담 시 목소리가 작으시고, 꼼꼼하게 질문하시는 편입니다.');
-   const [attachments, setAttachments] = useState<FileAttachment[]>([
-      { id: '1', name: '가족관계증명서.pdf', size: 1024 * 450, type: 'application/pdf', progress: 100, status: 'completed' },
-      { id: '2', name: '보험증권_메리츠.jpg', size: 1024 * 2500, type: 'image/jpeg', progress: 100, status: 'completed' },
-      { id: '3', name: '건강검진결과서.pdf', size: 1024 * 5100, type: 'application/pdf', progress: 100, status: 'completed' }
-   ]);
-   
    const customer = MOCK_DATA.customers.find(c => c.id === item.customerId);
-   const hiraPreFill = getHiraPreFill(item.customerId);
    const actorName = currentRole === 'call_member' ? '김상담' : roleLabel;
-   
-   // ======== Validation State Computation ========
-   const validationState: ValidationState = useMemo(() => ({
-      // Step 1→2 (1차 상담 기본 확인)
-      identityVerified: true,    // 본인 확인 (기본값: 완료)
-      addressVerified: true,     // 거주지 확인 (기본값: 완료)
-      accountVerified: true,     // 환급계좌 확인 (기본값: 완료)
-      // Step 2→3
-      insuranceChecked: insuranceStatus === '있음' || insuranceStatus === '없음',
-      premiumEntered: insuranceStatus === '없음' || (insuranceStatus === '있음' && monthlyPremium !== ''),
-      paymentStatusChecked: insuranceStatus === '없음' || paymentStatus !== '',
-      contractorChecked: insuranceStatus === '없음' || contractor !== '',
-      // Step 3→4
-      designerRelationChecked: insuranceStatus === '없음' || joinPath !== '',
-      healthCheckCompleted: trafficAccident !== '' && surgery !== '' && criticalDisease !== '' && medication !== '',
-      exceptionDiseaseChecked: true, // 2차 상담에서 체크
-      // Step 4 - 미팅 인계
-      refundAmountEntered: refundEstimate !== '',
-      feeNotified,
-      meetingScheduleConfirmed: meetingDate !== '' && meetingTime !== '' && meetingLocation !== '',
-      recordingAttached: recording1stAttached || recording2ndAttached,
-      simpyeongwonAttached,
-      // 자동 불가 판정
-      noInsurance: insuranceStatus === '없음',
-      paymentDefaulted: paymentStatus === '미납 중' || paymentStatus === '실효됨',
-      designerRelative: joinPath === '가족' || joinPath === '지인',
-      criticalDiseaseActive: criticalDisease === '있음' && criticalOptions.length > 0,
-      ageOver70: false, // 나이 정보 연동 필요
-   }), [
-      insuranceStatus, monthlyPremium, paymentStatus, contractor,
-      joinPath, trafficAccident, surgery, criticalDisease, criticalOptions, medication,
-      refundEstimate, feeNotified, meetingDate, meetingTime, meetingLocation,
-      recording1stAttached, recording2ndAttached, simpyeongwonAttached,
-   ]);
-   
-   // 자동 불가 사유 계산
-   const autoBlockReasons: string[] = useMemo(() => {
-      const reasons: string[] = [];
-      if (validationState.noInsurance && insuranceStatus === '없음') {
-         reasons.push('보험 미가입 → 서비스 제공 불가');
-      }
-      if (validationState.paymentDefaulted) {
-         reasons.push(`보험 ${paymentStatus} → 보험금 지급 불가`);
-      }
-      if (validationState.designerRelative) {
-         reasons.push(`기존 설계사와 ${joinPath} 관계 → 보상담당자 지정 불가`);
-      }
-      return reasons;
-   }, [validationState, insuranceStatus, paymentStatus, joinPath]);
-
-   // A-6: 중대질환 자동 감지 (criticalOptions + criticalDiseaseDetail 기반)
-   const criticalDetection = useMemo(() => {
-      const allText = [...criticalOptions, criticalDiseaseDetail].join(' ');
-      if (!allText.trim()) return null;
-      return detectCriticalCondition(allText);
-   }, [criticalOptions, criticalDiseaseDetail]);
-
-   // Cut-rule 자동 평가 (부재횟수, 거절, 중대질환, 무응답 기간)
-   const cutRuleResult = useMemo(() => {
-      // Mock: 실제로는 서버에서 contactAttempts, lastContactAt 가져옴
-      const mockContactAttempts = selectedStatus === 'absent' ? 5 : (selectedStatus === 'waiting' ? 0 : 2);
-      const isRefusal = ['cancel', 'impossible', '1st-cancel', '2nd-cancel'].includes(selectedStatus);
-      return evaluateCutRules({
-        contactAttempts: mockContactAttempts,
-        explicitRefusal: isRefusal,
-        isCritical: criticalDetection?.isCritical ?? false,
-        daysSinceLastContact: 0,
-      });
-   }, [selectedStatus, criticalDetection]);
+   const checklistAttachments = useMemo<FileAttachment[]>(
+      () => fileSlots.map((slot) => slot.file).filter((file): file is FileAttachment => file !== null),
+      [fileSlots],
+   );
+   const [scriptOverrides, setScriptOverrides] = useState<Record<string, string>>({});
+   const customerName = customer?.name || item.customerName;
+   const customerRegion = customer?.address?.split(' ')[1] || '경기도 화성시';
+   const script1Sections = useMemo(
+      () => [
+         {
+            id: 'script1-opening',
+            title: '오프닝',
+            defaultText: `${customerName}님 맞으실까요? 안녕하세요. 보험금 환급 관련하여 신청 남겨주셔서 더바다 보상팀 조힘찬 매니저입니다.\n\n환급절차 관련해서 몇 가지 안내차 연락드렸는데요.\n잠시 통화 가능하실까요?`,
+         },
+         {
+            id: 'script1-trust',
+            title: '신뢰 형성',
+            defaultText: `네 감사합니다.\n우선 본인 확인차 고객님께서 남겨주신 정보 먼저 확인 도움드리겠습니다.\n현재 거주 중이신 지역이 ${customerRegion}으로 남겨주셨는데 맞으시구요?\n환급 원하시는 계좌는 새마을금고 맞으시죠?`,
+         },
+         {
+            id: 'script1-process',
+            title: '절차 설명',
+            defaultText: `${customerName}님 보험금 환급 관련해서 업무절차를 간략하게 설명드리겠습니다.\n보험사들의 계약사항이나 특약사항을 전부 알고 계신 게 아니기 때문에 몰라서 청구하지 못한 보험금들이 많습니다.\n저희 더바다에서는 병원비 외에도 입원, 수술, 질병, 상해 이력 등을 확인해 미청구 보험금을 찾아드리고 있습니다.`,
+         },
+         {
+            id: 'script1-closing',
+            title: '마무리',
+            defaultText: `네 확인 감사합니다. 말씀 주신 내용 토대로 고객님께서 더 받으실 수 있는 보험금을 확인한 뒤 2~3분 안쪽으로 다시 연락드릴 예정입니다.\n다음 통화 괜찮으실까요?`,
+         },
+      ],
+      [customerName, customerRegion],
+   );
+   const script2Sections = useMemo(
+      () => [
+         {
+            id: 'script2-opening',
+            title: '재연락 오프닝',
+            defaultText: `${customerName}님, 안녕하세요. 다시 연락드린 더바다 보상팀입니다.\n저희 측에서 확인한 결과 ${customerName}님이 수령하실 수 있는 예상 보험금이 확인되고 있습니다.`,
+         },
+         {
+            id: 'script2-consent',
+            title: '열람 동의',
+            defaultText: `원활한 보험금 환급을 위해 보험가입내역을 열람해 봐야 하는데 동의해주실 수 있으시죠?\n동의가 완료되면 전담팀에서 세부 확인을 이어가겠습니다.`,
+         },
+         {
+            id: 'script2-fee',
+            title: '수수료 및 서비스 안내',
+            defaultText: `환급 서비스 수수료는 최종 환급금액의 10%를 후불로 청구드리고 있습니다.\n보험사 측에서 보험금 지급 거절을 하거나 적게 주는 경우에는 법무법인 자문도 함께 안내드릴 수 있습니다.`,
+         },
+         {
+            id: 'script2-closing',
+            title: '종료 멘트',
+            defaultText: `이후 진행 관련 세부 안내는 전담팀에서 다시 연락드릴 예정이니 안내톡 확인 부탁드립니다.\n저는 상담을 여기서 종료하고, 많은 보험금 받아가시길 바라겠습니다.`,
+         },
+      ],
+      [customerName],
+   );
 
    // Refs for scrolling to sections
    const insuranceRef = useRef<HTMLDivElement>(null);
@@ -765,7 +768,7 @@ function ConsultationDetail({ item, onBack, type }: { item: any, onBack: () => v
    const traitsRef = useRef<HTMLDivElement>(null);
    
    // Scroll to section function
-   const scrollToSection = (ref: React.RefObject<HTMLDivElement>, sectionId: string) => {
+   const scrollToSection = (ref: React.RefObject<HTMLDivElement | null>, sectionId: string) => {
       if (ref.current) {
          ref.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
          setHighlightSection(sectionId);
@@ -775,7 +778,7 @@ function ConsultationDetail({ item, onBack, type }: { item: any, onBack: () => v
    
    // Handle card click from LiveRecordSection
    const handleCardClick = (sectionId: string) => {
-      const refMap: { [key: string]: React.RefObject<HTMLDivElement> } = {
+      const refMap: { [key: string]: React.RefObject<HTMLDivElement | null> } = {
          'insuranceType': insuranceRef,
          'monthlyPremium': insuranceRef,
          'paymentStatus': insuranceRef,
@@ -845,7 +848,7 @@ function ConsultationDetail({ item, onBack, type }: { item: any, onBack: () => v
          auditTrail: [
             {
                id: `status-changed-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-               type: 'status_changed',
+               type: 'status_changed' as const,
                actor: actorName,
                message: `${stepLabel} 상담 후 취소 불가 처리`,
                tone: 'warning' as const,
@@ -857,6 +860,74 @@ function ConsultationDetail({ item, onBack, type }: { item: any, onBack: () => v
 
       toast.info('종결 - 취소 불가 처리가 완료되었습니다.');
    };
+
+   const buildConsultationDraft = () => ({
+      ...DEFAULT_CONSULTATION_DRAFT,
+      currentStep,
+      selectedStatus,
+      selectedReason,
+      insuranceStatus,
+      insuranceType,
+      monthlyPremium,
+      paymentStatus,
+      contractor,
+      joinPath,
+      trafficAccident,
+      trafficAccidentDetail,
+      surgery,
+      surgeryOptions,
+      surgeryDetail,
+      criticalDisease,
+      criticalOptions,
+      criticalDetail: criticalDiseaseDetail,
+      medication,
+      medicationDetail,
+      companion,
+      disposition,
+      trustLevel,
+      decisionMaker,
+      bestTime,
+      traitNote,
+      handoffNote: consultationMemo,
+      transcriptAttached: fileSlots.some((slot) => ['rec1', 'rec2'].includes(slot.id) && Boolean(slot.file)),
+      hasReferral,
+      referralNote: hasReferral ? referralNote : '',
+   });
+
+   const handleSaveConsultationDraft = () => {
+      if (!item.requestId) {
+         toast.error('저장할 요청건을 찾지 못했습니다.');
+         return;
+      }
+
+      saveConsultationDraft(item.requestId, buildConsultationDraft(), actorName);
+      toast.success('상담 드래프트를 저장했습니다.');
+   };
+
+   const getScriptValue = useCallback(
+      (id: string, defaultText: string) => scriptOverrides[id] ?? defaultText,
+      [scriptOverrides],
+   );
+
+   const handleScriptValueChange = useCallback((id: string, value: string) => {
+      setScriptOverrides((current) => ({ ...current, [id]: value }));
+   }, []);
+
+   const handleScriptReset = useCallback((id: string) => {
+      setScriptOverrides((current) => {
+         const next = { ...current };
+         delete next[id];
+         return next;
+      });
+   }, []);
+
+   const handleScriptTabReset = useCallback((ids: string[]) => {
+      setScriptOverrides((current) => {
+         const next = { ...current };
+         ids.forEach((id) => delete next[id]);
+         return next;
+      });
+   }, []);
 
    return (
       <div className="flex flex-col h-full bg-[#F6F7F9] overflow-hidden -m-4">
@@ -902,45 +973,7 @@ function ConsultationDetail({ item, onBack, type }: { item: any, onBack: () => v
                      onStatusChange={setSelectedStatus}
                      onCancelNotPossible={handleCancelNotPossible}
                      onReasonChange={setSelectedReason}
-                     validationState={validationState}
-                     autoBlockReasons={autoBlockReasons}
                   />
-
-                  {/* A-6: 중대질환 자동 감지 배너 */}
-                  {criticalDetection?.isCritical && (
-                     <div className="bg-rose-50 border border-rose-300 rounded-lg px-4 py-3 flex items-start gap-3">
-                        <AlertTriangle size={18} className="text-rose-500 mt-0.5 shrink-0" />
-                        <div>
-                           <p className="text-xs font-bold text-rose-700">중대질환 감지됨</p>
-                           <p className="text-[11px] text-rose-600 mt-0.5">
-                              감지 키워드: <span className="font-bold">{criticalDetection.matchedKeywords.join(', ')}</span>
-                              — 팀리드 확인 및 별도 프로세스 필요
-                           </p>
-                        </div>
-                     </div>
-                  )}
-
-                  {/* Cut-rule 자동 판정 배너 */}
-                  {cutRuleResult.shouldCut && (
-                     <div className="bg-orange-50 border border-orange-300 rounded-lg px-4 py-3 flex items-start gap-3">
-                        <AlertTriangle size={18} className="text-orange-600 mt-0.5 shrink-0" />
-                        <div className="flex-1">
-                           <p className="text-xs font-bold text-orange-800">Cut-rule 해당 — 진행중단 권고</p>
-                           <p className="text-[11px] text-orange-700 mt-0.5">
-                              사유: <span className="font-bold">{cutRuleResult.reason}</span>
-                              — 이탈 처리 또는 팀장 판단이 필요합니다.
-                           </p>
-                           <div className="flex gap-2 mt-2">
-                              <button className="px-2.5 py-1 text-[11px] font-bold bg-orange-600 text-white rounded hover:bg-orange-700">
-                                 이탈 처리
-                              </button>
-                              <button className="px-2.5 py-1 text-[11px] font-bold text-orange-700 bg-white border border-orange-300 rounded hover:bg-orange-50">
-                                 팀장 검토 요청
-                              </button>
-                           </div>
-                        </div>
-                     </div>
-                  )}
 
                   {/* Divider */}
                   <div className="bg-[#f1f5f9] h-px" />
@@ -1118,7 +1151,6 @@ function ConsultationDetail({ item, onBack, type }: { item: any, onBack: () => v
                         criticalDiseaseRef={criticalDiseaseRef}
                         medicationRef={medicationRef}
                         highlightSection={highlightSection}
-                        hiraPreFill={hiraPreFill}
                      />
 
                      {/* Item 9: 동반신청고객 */}
@@ -1164,7 +1196,15 @@ function ConsultationDetail({ item, onBack, type }: { item: any, onBack: () => v
                               <div className="space-y-2">
                                  {companions.map((comp, idx) => (
                                     <div key={idx} className="bg-[#f8fafc] border border-[#f1f5f9] rounded p-2 space-y-3">
-                                       <p className="text-[10px] font-bold text-[#90a1b9] tracking-wide">동반인 {idx + 1}</p>
+                                       <div className="flex items-center justify-between">
+                                          <p className="text-[10px] font-bold text-[#90a1b9] tracking-wide">동반인 {idx + 1}</p>
+                                          <button
+                                             onClick={() => setCompanions(companions.filter((_, i) => i !== idx))}
+                                             className="text-[10px] text-[#90a1b9] hover:text-red-400 transition-colors"
+                                          >
+                                             삭제
+                                          </button>
+                                       </div>
                                        
                                        <div className="grid grid-cols-2 gap-2">
                                           <input
@@ -1360,178 +1400,15 @@ function ConsultationDetail({ item, onBack, type }: { item: any, onBack: () => v
                   {/* Divider */}
                   <div className="bg-[#f1f5f9] h-px" />
 
-                  {/* File Attachment */}
-                  <FileAttachmentSection initialFiles={attachments} onFilesChange={setAttachments} />
-
-                  {/* Divider */}
-                  <div className="bg-[#f1f5f9] h-px" />
-
-                  {/* STEP 3: 미팅 예약 (3차 TM) */}
-                  <div className="space-y-3">
-                     <p className="text-[11px] font-bold text-[#62748e] tracking-[0.06px] uppercase flex items-center gap-1.5">
-                        <CalendarDays size={12} /> STEP 3. 미팅 예약 (3차 TM)
-                     </p>
-                     
-                     <div className="bg-[#f8fafc] border border-[#e2e8f0] rounded p-3 space-y-3">
-                        {/* 환급 예상금액 */}
-                        <div className="space-y-1.5">
-                           <div className="flex items-center gap-1.5">
-                              <DollarSign size={12} className="text-emerald-600" />
-                              <p className="text-xs font-bold text-[#314158]">환급 예상금액</p>
-                              <span className="text-[9px] text-rose-500 font-bold">필수</span>
-                           </div>
-                           <div className="flex items-center gap-2">
-                              <input 
-                                 type="text" 
-                                 className={clsx(
-                                    "flex-1 p-2 text-xs border rounded bg-white",
-                                    refundEstimate ? "border-emerald-300" : "border-rose-300"
-                                 )}
-                                 placeholder="예상 금액 입력"
-                                 value={refundEstimate}
-                                 onChange={e => setRefundEstimate(e.target.value)}
-                              />
-                              <span className="text-xs text-[#62748e] font-bold">만원</span>
-                           </div>
-                           <p className="text-[10px] text-slate-400 px-1">* 기지급 보험금 고려하여 차이가 날 수 있음을 안내</p>
-                        </div>
-
-                        {/* 수수료 안내 */}
-                        <label className={clsx(
-                           "flex items-center gap-2 px-3 py-2.5 rounded border cursor-pointer transition-all",
-                           feeNotified ? "bg-emerald-50 border-emerald-200" : "bg-white border-rose-200"
-                        )}>
-                           <input
-                              type="checkbox"
-                              checked={feeNotified}
-                              onChange={(e) => setFeeNotified(e.target.checked)}
-                              className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
-                           />
-                           <span className={clsx("text-xs font-bold", feeNotified ? "text-emerald-700" : "text-slate-600")}>
-                              수수료 10% 안내 완료
-                           </span>
-                           {feeNotified && <CheckCircle2 size={12} className="text-emerald-500 ml-auto" />}
-                           {!feeNotified && <span className="text-[9px] text-rose-500 font-bold ml-auto">필수</span>}
-                        </label>
-
-                        {/* 미팅 일시/장소 */}
-                        <div className="space-y-2">
-                           <div className="flex items-center gap-1.5">
-                              <MapPin size={12} className="text-blue-600" />
-                              <p className="text-xs font-bold text-[#314158]">미팅 일시 / 장소</p>
-                              <span className="text-[9px] text-rose-500 font-bold">필수</span>
-                           </div>
-                           <div className="grid grid-cols-2 gap-2">
-                              <input 
-                                 type="date" 
-                                 className={clsx(
-                                    "p-2 text-xs border rounded bg-white",
-                                    meetingDate ? "border-blue-300" : "border-rose-300"
-                                 )}
-                                 value={meetingDate}
-                                 onChange={e => setMeetingDate(e.target.value)}
-                              />
-                              <input 
-                                 type="time" 
-                                 className={clsx(
-                                    "p-2 text-xs border rounded bg-white",
-                                    meetingTime ? "border-blue-300" : "border-rose-300"
-                                 )}
-                                 value={meetingTime}
-                                 onChange={e => setMeetingTime(e.target.value)}
-                              />
-                           </div>
-                           <input 
-                              type="text" 
-                              className={clsx(
-                                 "w-full p-2 text-xs border rounded bg-white",
-                                 meetingLocation ? "border-blue-300" : "border-rose-300"
-                              )}
-                              placeholder="미팅 장소 (예: 고객 자택, 카페 등)"
-                              value={meetingLocation}
-                              onChange={e => setMeetingLocation(e.target.value)}
-                           />
-                        </div>
-                     </div>
-                  </div>
-
-                  {/* Divider */}
-                  <div className="bg-[#f1f5f9] h-px" />
-
-                  {/* STEP 4: 인계 체크리스트 (5단계) */}
-                  <div className="space-y-3">
-                     <p className="text-[11px] font-bold text-[#62748e] tracking-[0.06px] uppercase flex items-center gap-1.5">
-                        <ClipboardCheck size={12} /> STEP 4. 인계 체크리스트
-                     </p>
-                     
-                     <div className="bg-[#f8fafc] border border-[#e2e8f0] rounded p-3 space-y-2">
-                        {[
-                           { id: 'rec1', label: '1차 녹취파일 첨부', icon: <Mic size={12} className="text-indigo-500" />, checked: recording1stAttached, onChange: setRecording1stAttached },
-                           { id: 'rec2', label: '2차 녹취파일 첨부', icon: <Mic size={12} className="text-purple-500" />, checked: recording2ndAttached, onChange: setRecording2ndAttached },
-                           { id: 'simp', label: '심평원 진료이력 첨부', icon: <FileSearch size={12} className="text-blue-500" />, checked: simpyeongwonAttached, onChange: setSimpyeongwonAttached },
-                        ].map((checkItem) => (
-                           <label key={checkItem.id} className={clsx(
-                              "flex items-center gap-2 px-3 py-2.5 rounded border cursor-pointer transition-all",
-                              checkItem.checked 
-                                 ? "bg-emerald-50 border-emerald-200" 
-                                 : "bg-white border-slate-200 hover:border-slate-300"
-                           )}>
-                              <input
-                                 type="checkbox"
-                                 checked={checkItem.checked}
-                                 onChange={(e) => checkItem.onChange(e.target.checked)}
-                                 className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
-                              />
-                              {checkItem.icon}
-                              <span className={clsx(
-                                 "text-xs font-medium flex-1",
-                                 checkItem.checked ? "text-emerald-700" : "text-slate-600"
-                              )}>
-                                 {checkItem.label}
-                              </span>
-                              {checkItem.checked && <CheckCircle2 size={12} className="text-emerald-500" />}
-                              {!checkItem.checked && <span className="text-[9px] text-rose-500 font-bold">필수</span>}
-                           </label>
-                        ))}
-                        
-                        {/* 부재건 알림톡 발송 */}
-                        <div className="border-t border-slate-200 pt-2 mt-2">
-                           <label className={clsx(
-                              "flex items-center gap-2 px-3 py-2.5 rounded border cursor-pointer transition-all",
-                              absentAlimtalkSent 
-                                 ? "bg-blue-50 border-blue-200" 
-                                 : "bg-white border-slate-200 hover:border-slate-300"
-                           )}>
-                              <input
-                                 type="checkbox"
-                                 checked={absentAlimtalkSent}
-                                 onChange={(e) => setAbsentAlimtalkSent(e.target.checked)}
-                                 className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                              />
-                              <Bell size={12} className="text-blue-500" />
-                              <span className={clsx(
-                                 "text-xs font-medium flex-1",
-                                 absentAlimtalkSent ? "text-blue-700" : "text-slate-600"
-                              )}>
-                                 부재건 알림톡 발송 완료
-                              </span>
-                              {absentAlimtalkSent && <CheckCircle2 size={12} className="text-blue-500" />}
-                           </label>
-                           <p className="text-[10px] text-slate-400 px-3 mt-1">* 부재 상태 변경 시 자동 발송 (수동 확인)</p>
-                        </div>
-
-                        {/* 인계 메모 */}
-                        <div className="border-t border-slate-200 pt-2 mt-2">
-                           <p className="text-[10px] font-bold text-slate-500 mb-1.5 px-1">인계 메모 (영업팀 전달사항)</p>
-                           <textarea 
-                              className="w-full h-20 p-2 text-xs bg-white border border-slate-200 rounded resize-none focus:outline-none focus:border-blue-500 transition-colors"
-                              placeholder="영업팀에게 전달할 특이사항, 고객 성향, 주의사항 등을 입력하세요..."
-                              value={handoffMemo}
-                              onChange={(e) => setHandoffMemo(e.target.value)}
-                           />
-                        </div>
-                     </div>
-                  </div>
+                  <FileAttachmentSection
+                     slots={fileSlots}
+                     onSlotFileChange={(slotId, file) => {
+                        setFileSlots((current) =>
+                           current.map((slot) => (slot.id === slotId ? { ...slot, file } : slot)),
+                        );
+                     }}
+                     checkItems={[]}
+                  />
                </div>
 
                {/* Floating Save Button with Validation */}
@@ -1559,7 +1436,8 @@ function ConsultationDetail({ item, onBack, type }: { item: any, onBack: () => v
                                  </div>
                               </div>
                            )}
-                           <button 
+                           <button
+                              onClick={handleSaveConsultationDraft}
                               disabled={!canSave}
                               className={clsx(
                                  "w-full py-3 rounded-lg font-bold transition-colors shadow-lg flex items-center justify-center gap-2",
@@ -1624,7 +1502,6 @@ function ConsultationDetail({ item, onBack, type }: { item: any, onBack: () => v
                            surgery={surgery}
                            surgeryDetail={surgeryDetail}
                            decisionMaker={decisionMaker}
-                           refundEstimate={refundEstimate}
                         />
                      </>
                   )}
@@ -1672,26 +1549,41 @@ function ConsultationDetail({ item, onBack, type }: { item: any, onBack: () => v
 
                   {/* ── 탭 2: 상담팀 확인사항 ── */}
                   {centerTab === 'checklist' && (
-                     <LiveRecordSection 
-                        insuranceType={insuranceType}
-                        monthlyPremium={monthlyPremium ? `${monthlyPremium}만원` : ''}
-                        paymentStatus={paymentStatus}
-                        contractor={contractor}
-                        joinPath={insuranceStatus === '있음' ? joinPath : '-'}
-                        trafficAccident={trafficAccident}
-                        surgery={surgery === '있음' && surgeryOptions.length > 0 ? surgeryOptions.join(', ') : surgery}
-                        surgeryDetail={surgeryDetail}
-                        criticalDisease={criticalDisease}
-                        medication={medication}
-                        companion={companion}
-                        onCardClick={handleCardClick}
-                        disposition={disposition}
-                        trustLevel={trustLevel}
-                        bestTime={bestTime}
-                        decisionMaker={decisionMaker}
-                        traitNote={traitNote}
-                        attachments={attachments}
-                     />
+                     <>
+                        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                           <div className="px-4 py-3 bg-slate-50 border-b border-slate-200 flex items-center gap-2">
+                              <MessageSquare size={14} className="text-slate-600" />
+                              <h3 className="text-sm font-bold text-slate-800">상담팀 메모</h3>
+                           </div>
+                           <div className="p-4">
+                              {consultationMemo ? (
+                                 <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap">{consultationMemo}</p>
+                              ) : (
+                                 <p className="text-sm text-slate-400 italic">작성된 메모가 없습니다.</p>
+                              )}
+                           </div>
+                        </div>
+                        <LiveRecordSection 
+                           insuranceType={insuranceType}
+                           monthlyPremium={monthlyPremium ? `${monthlyPremium}만원` : ''}
+                           paymentStatus={paymentStatus}
+                           contractor={contractor}
+                           joinPath={insuranceStatus === '있음' ? joinPath : '-'}
+                           trafficAccident={trafficAccident}
+                           surgery={surgery === '있음' && surgeryOptions.length > 0 ? surgeryOptions.join(', ') : surgery}
+                           surgeryDetail={surgeryDetail}
+                           criticalDisease={criticalDisease}
+                           medication={medication}
+                           companion={companion}
+                           onCardClick={handleCardClick}
+                           disposition={disposition}
+                           trustLevel={trustLevel}
+                           bestTime={bestTime}
+                           decisionMaker={decisionMaker}
+                           traitNote={traitNote}
+                           attachments={checklistAttachments}
+                        />
+                     </>
                   )}
 
                   {/* ── 탭 3: 스크립트 ── */}
@@ -1767,309 +1659,590 @@ function ConsultationDetail({ item, onBack, type }: { item: any, onBack: () => v
                         </div>
                      )}
 
+                     {/* Script edit info bar */}
+                     <div className="flex items-center justify-between px-4 py-2 bg-slate-50 border-b border-slate-100">
+                        <p className="text-[10px] text-slate-500">텍스트를 클릭하면 수정할 수 있습니다</p>
+                        {Object.keys(scriptOverrides).length > 0 && (
+                           <button
+                              type="button"
+                              onClick={() => setScriptOverrides({})}
+                              className="flex items-center gap-1 text-[10px] text-slate-400 hover:text-slate-600 transition-colors"
+                           >
+                              <RotateCcw size={10} /> 초기화
+                           </button>
+                        )}
+                     </div>
+
                      <div className="p-6 space-y-6">
                         {activeTab === 'script1' && (
                            <>
-                              {/* Quote Box */}
-                              <div className="bg-blue-50/50 p-4 rounded-lg border border-blue-100 text-[#1e293b] font-bold text-sm shadow-sm">
-                                 <span className="text-blue-600 underline decoration-blue-300 decoration-2 underline-offset-2">{customer?.name || item.customerName}</span>님 맞으실까요? 안녕하세요. 보험금 환급 관련하여 신청 남겨주셔서 더바다 보상팀 <span className="text-blue-600 underline decoration-blue-300 decoration-2 underline-offset-2">조힘찬</span> 매니저입니다.
+                              {/* Quote Box - action block, locked */}
+                              <div className="relative group/lock">
+                                 <div className="bg-blue-50/50 p-4 rounded-lg border border-blue-100 text-[#1e293b] font-bold text-sm shadow-sm">
+                                    <span className="text-blue-600 underline decoration-blue-300 decoration-2 underline-offset-2">{customer?.name || item.customerName}</span>님 맞으실까요? 안녕하세요. 보험금 환급 관련하여 신청 남겨주셔서 더바다 보상팀 <span className="text-blue-600 underline decoration-blue-300 decoration-2 underline-offset-2">조힘찬</span> 매니저입니다.
+                                 </div>
+                                 <Lock size={10} className="absolute top-2 right-2 text-slate-300" />
                               </div>
 
                               {/* Main Script Text */}
-                              <div className="space-y-4 text-sm text-slate-700 leading-relaxed">
-                                 <p>환급절차 관련해서 몇 가지 안내차 연락드렸는데요~</p>
-                                 <p>잠시 통화 가능하실까요~?</p>
-                                 <p className="text-slate-400 text-xs">(고객 응답 후)</p>
-                                 
+                              <div className="space-y-3 text-sm text-slate-700 leading-relaxed">
+                                 {([
+                                    { id: 's1-t1', defaultText: '환급절차 관련해서 몇 가지 안내차 연락드렸는데요~' },
+                                    { id: 's1-t2', defaultText: '잠시 통화 가능하실까요~?' },
+                                    { id: 's1-t3', defaultText: '(고객 응답 후)', className: 'text-slate-400 text-xs' },
+                                 ] as { id: string; defaultText: string; className?: string }[]).map(({ id, defaultText, className }) => (
+                                    <textarea
+                                       key={id}
+                                       value={scriptOverrides[id] !== undefined ? scriptOverrides[id] : defaultText}
+                                       onChange={e => setScriptOverrides(prev => ({ ...prev, [id]: e.target.value }))}
+                                       rows={1}
+                                       className={clsx(
+                                          'w-full resize-none bg-transparent border border-transparent rounded px-2 py-1 leading-relaxed focus:outline-none focus:border-blue-200 focus:bg-blue-50/20 transition-colors overflow-hidden',
+                                          className ?? 'text-sm text-slate-700'
+                                       )}
+                                       style={{ minHeight: '1.75rem' }}
+                                       onInput={e => { const t = e.currentTarget; t.style.height = 'auto'; t.style.height = t.scrollHeight + 'px'; }}
+                                    />
+                                 ))}
+
                                  <div className="border-t border-slate-200 pt-4 mt-4"></div>
-                                 
-                                 <p>네 감사합니다~!</p>
-                                 
-                                 <p className="font-bold text-blue-600">[신뢰주기]</p>
-                                 <p>우선 본인 확인차 고객님께서 남겨주신 정보 먼저 확인 도움드리겠습니다.</p>
-                                 <p>
-                                    현재 거주 중이신 지역이 <span className="font-bold text-blue-600 underline decoration-blue-200 decoration-2 underline-offset-2">{customer?.address?.split(' ')[1] || '경기도 화성시'}</span>으로 남겨주셨는데 맞으시구요?
-                                 </p>
-                                 <p className="text-rose-500 text-xs font-bold bg-rose-50 inline-block px-2 py-1 rounded">
-                                    * 강원도는 철원 화천 춘천 원주 횡성 외 불가능
-                                 </p>
-                                 <p>환급 원하시는 계좌는 <span className="font-bold text-[#1e293b]">새마을금고</span> 맞으시죠?</p>
-                                 
+
+                                 {([
+                                    { id: 's1-t4', defaultText: '네 감사합니다~!' },
+                                    { id: 's1-t5', defaultText: '[신뢰주기]', className: 'font-bold text-blue-600 text-sm' },
+                                    { id: 's1-t6', defaultText: '우선 본인 확인차 고객님께서 남겨주신 정보 먼저 확인 도움드리겠습니다.' },
+                                    { id: 's1-t7', defaultText: `현재 거주 중이신 지역이 ${customer?.address?.split(' ')[1] || '경기도 화성시'}으로 남겨주셨는데 맞으시구요?` },
+                                    { id: 's1-t8', defaultText: '* 강원도는 철원 화천 춘천 원주 횡성 외 불가능', className: 'text-rose-500 text-xs font-bold' },
+                                    { id: 's1-t9', defaultText: '환급 원하시는 계좌는 새마을금고 맞으시죠?' },
+                                 ] as { id: string; defaultText: string; className?: string }[]).map(({ id, defaultText, className }) => (
+                                    <textarea
+                                       key={id}
+                                       value={scriptOverrides[id] !== undefined ? scriptOverrides[id] : defaultText}
+                                       onChange={e => setScriptOverrides(prev => ({ ...prev, [id]: e.target.value }))}
+                                       rows={1}
+                                       className={clsx(
+                                          'w-full resize-none bg-transparent border border-transparent rounded px-2 py-1 leading-relaxed focus:outline-none focus:border-blue-200 focus:bg-blue-50/20 transition-colors overflow-hidden',
+                                          className ?? 'text-sm text-slate-700'
+                                       )}
+                                       style={{ minHeight: '1.75rem' }}
+                                       onInput={e => { const t = e.currentTarget; t.style.height = 'auto'; t.style.height = t.scrollHeight + 'px'; }}
+                                    />
+                                 ))}
+
                                  <div className="border-t border-slate-200 pt-4 mt-4"></div>
-                                 
-                                 <p>네, 확인 감사합니다!</p>
-                                 <p>
-                                    우선 <span className="text-blue-600 font-bold underline decoration-blue-200 decoration-2 underline-offset-2">{customer?.name || item.customerName}</span>님 보험금 환급 관련해서 업무절차좀 간략하게 설명드릴건데요~!
-                                 </p>
-                                 <p>
-                                    보험사들의 계약사항이나 특약사항을 전부 알고 계신게 아니기 때문에 몰라서 청구하지 못한 보험금들이 굉장히 많지 않습니까?
-                                 </p>
+
+                                 {([
+                                    { id: 's1-t10', defaultText: '네, 확인 감사합니다!' },
+                                    { id: 's1-t11', defaultText: `우선 ${customer?.name || item.customerName}님 보험금 환급 관련해서 업무절차좀 간략하게 설명드릴건데요~!` },
+                                    { id: 's1-t12', defaultText: '보험사들의 계약사항이나 특약사항을 전부 알고 계신게 아니기 때문에 몰라서 청구하지 못한 보험금들이 굉장히 많지 않습니까?' },
+                                 ] as { id: string; defaultText: string; className?: string }[]).map(({ id, defaultText, className }) => (
+                                    <textarea
+                                       key={id}
+                                       value={scriptOverrides[id] !== undefined ? scriptOverrides[id] : defaultText}
+                                       onChange={e => setScriptOverrides(prev => ({ ...prev, [id]: e.target.value }))}
+                                       rows={1}
+                                       className={clsx(
+                                          'w-full resize-none bg-transparent border border-transparent rounded px-2 py-1 leading-relaxed focus:outline-none focus:border-blue-200 focus:bg-blue-50/20 transition-colors overflow-hidden',
+                                          className ?? 'text-sm text-slate-700'
+                                       )}
+                                       style={{ minHeight: '1.75rem' }}
+                                       onInput={e => { const t = e.currentTarget; t.style.height = 'auto'; t.style.height = t.scrollHeight + 'px'; }}
+                                    />
+                                 ))}
                               </div>
 
-                              {/* Needs Box */}
-                              <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
-                                 <p className="text-xs text-slate-600 leading-relaxed">
-                                    그래서 저희 더바다에서는 회하신 병원비를 제외하고도 약재비, 입원, 수술, 질병, 상해 이력 등으로 보험사에 미청구한 보험금을 전부 찾으실 수 있게 도와드리고 있구요~!
-                                 </p>
-                                 <p className="text-xs text-slate-600 leading-relaxed mt-2">
-                                    그러다보니 보험이 없으신 경우에는 서비스 제공이 어려운데 실손보험은 가입 되어 계시죠~?
-                                 </p>
+                              {/* Needs Box - locked */}
+                              <div className="relative group/lock">
+                                 <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
+                                    <p className="text-xs text-slate-600 leading-relaxed">
+                                       그래서 저희 더바다에서는 회하신 병원비를 제외하고도 약재비, 입원, 수술, 질병, 상해 이력 등으로 보험사에 미청구한 보험금을 전부 찾으실 수 있게 도와드리고 있구요~!
+                                    </p>
+                                    <p className="text-xs text-slate-600 leading-relaxed mt-2">
+                                       그러다보니 보험이 없으신 경우에는 서비스 제공이 어려운데 실손보험은 가입 되어 계시죠~?
+                                    </p>
+                                 </div>
+                                 <Lock size={10} className="absolute top-2 right-2 text-slate-300" />
                               </div>
-                              
-                              <div className="space-y-4 text-sm text-slate-700 leading-relaxed">
-                                 <p>네 답변 감사합니다~!</p>
-                                 
-                                 <div className="flex items-start justify-between gap-2 bg-blue-50/30 p-3 rounded-lg border border-blue-200">
-                                    <p className="flex-1">
-                                       종합보험도 있으시면 진단비나 수술비 같은 것들을 추가로 확인해드릴 수 있는데 종합보험도 가입되어 계신가요?
-                                    </p>
-                                    <button
-                                       onClick={() => scrollToSection(insuranceRef, 'insurance')}
-                                       className="shrink-0 px-2 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700 transition-colors font-bold flex items-center gap-1"
-                                    >
-                                       입력 <ChevronRight size={14} />
-                                    </button>
+
+                              <div className="space-y-3 text-sm text-slate-700 leading-relaxed">
+                                 {([
+                                    { id: 's1-t13', defaultText: '네 답변 감사합니다~!' },
+                                 ] as { id: string; defaultText: string }[]).map(({ id, defaultText }) => (
+                                    <textarea
+                                       key={id}
+                                       value={scriptOverrides[id] !== undefined ? scriptOverrides[id] : defaultText}
+                                       onChange={e => setScriptOverrides(prev => ({ ...prev, [id]: e.target.value }))}
+                                       rows={1}
+                                       className="w-full resize-none bg-transparent border border-transparent rounded px-2 py-1 text-sm text-slate-700 leading-relaxed focus:outline-none focus:border-blue-200 focus:bg-blue-50/20 transition-colors overflow-hidden"
+                                       style={{ minHeight: '1.75rem' }}
+                                       onInput={e => { const t = e.currentTarget; t.style.height = 'auto'; t.style.height = t.scrollHeight + 'px'; }}
+                                    />
+                                 ))}
+
+                                 {/* Action block: 종합보험 */}
+                                 <div className="relative group/lock">
+                                    <div className="bg-blue-50/30 p-3 rounded-lg border border-blue-200 space-y-2">
+                                       <p className="text-sm text-slate-700">
+                                          종합보험도 있으시면 진단비나 수술비 같은 것들을 추가로 확인해드릴 수 있는데 종합보험도 가입되어 계신가요?
+                                       </p>
+                                       <div className="flex flex-wrap gap-1">
+                                          {(['있음', '없음'] as const).map(val => (
+                                             <button key={val} onClick={() => { setInsuranceStatus(val); if (val === '없음') setInsuranceType('없음'); }} className={clsx('px-2.5 py-1 text-xs rounded border font-bold transition-colors', insuranceStatus === val ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-600 border-slate-200 hover:border-blue-300')}>{val}</button>
+                                          ))}
+                                          {insuranceStatus === '있음' && (['실손+종합', '실손', '종합'] as const).map(t => (
+                                             <button key={t} onClick={() => setInsuranceType(t)} className={clsx('px-2 py-1 text-xs rounded border font-bold transition-colors', insuranceType === t ? 'bg-blue-100 text-blue-700 border-blue-400' : 'bg-white text-slate-500 border-slate-200 hover:border-blue-200')}>{t}</button>
+                                          ))}
+                                       </div>
+                                    </div>
+                                    <Lock size={10} className="absolute top-2 right-2 text-slate-300" />
                                  </div>
-                                 <p className="text-slate-500 text-xs">(흔히들 가입하는 암보험 같은걸 종합보험이라고 하거든요~!)</p>
-                                 
-                                 <p>네 답변 감사합니다~!</p>
-                                 
-                                 <p>
-                                    보험료 미납이 있으시면 청구를 해드려도 보���사에서 지급이 불가해서 여쭤보는건데 미납중이거나 실효된 보험은 없으시구요~?
-                                 </p>
-                                 
+
+                                 {([
+                                    { id: 's1-t14', defaultText: '(흔히들 가입하는 암보험 같은걸 종합보험이라고 하거든요~!)', className: 'text-slate-500 text-xs' },
+                                    { id: 's1-t15', defaultText: '네 답변 감사합니다~!' },
+                                    { id: 's1-t16', defaultText: '보험료 미납이 있으시면 청구를 해드려도 보험사에서 지급이 불가해서 여쭤보는건데 미납중이거나 실효된 보험은 없으시구요~?' },
+                                 ] as { id: string; defaultText: string; className?: string }[]).map(({ id, defaultText, className }) => (
+                                    <textarea
+                                       key={id}
+                                       value={scriptOverrides[id] !== undefined ? scriptOverrides[id] : defaultText}
+                                       onChange={e => setScriptOverrides(prev => ({ ...prev, [id]: e.target.value }))}
+                                       rows={1}
+                                       className={clsx(
+                                          'w-full resize-none bg-transparent border border-transparent rounded px-2 py-1 leading-relaxed focus:outline-none focus:border-blue-200 focus:bg-blue-50/20 transition-colors overflow-hidden',
+                                          className ?? 'text-sm text-slate-700'
+                                       )}
+                                       style={{ minHeight: '1.75rem' }}
+                                       onInput={e => { const t = e.currentTarget; t.style.height = 'auto'; t.style.height = t.scrollHeight + 'px'; }}
+                                    />
+                                 ))}
+
                                  <div className="border-t border-slate-200 pt-4 mt-4"></div>
-                                 
-                                 <p className="font-bold text-blue-600">[절차 안내]</p>
-                                 <p>
-                                    우선적으로 절차에 대해 먼저 안내를 해드리면 환급을 받기 위해선 아시겠지만 기존에 다니셨던 병원들을 각각 직접 내방하셔서, 진료기록과 필요한 서류를 발급하셔서 보험사별로 제출해주셔야 되잖아요?
-                                 </p>
-                                 <p>
-                                    이런 업무를 저희가 대신해서 도와드릴 예정이구요~! 저희가 대신 처리를 하기 위해서 보험사측에 보상관련 담당자를 저희로 지정해서 청구해드리는 업무를 도와드릴건데요.
-                                 </p>
-                                 <div className="flex items-start justify-between gap-2 bg-blue-50/30 p-3 rounded-lg border border-blue-200">
-                                    <p className="flex-1">
-                                       간혹가다가 가족분이 보험설계사이시거나 본인이 설계사인 경우에는 저희가 보상관련 담당자로 지정하기가 어렵거든요, 혹시 가족분이 설계사이시거나 본인이 설계사는 아니시죠?
-                                    </p>
-                                    <button
-                                       onClick={() => scrollToSection(designerRelationRef, 'designerRelation')}
-                                       className="shrink-0 px-2 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700 transition-colors font-bold flex items-center gap-1"
-                                    >
-                                       입력 <ChevronRight size={14} />
-                                    </button>
+
+                                 {([
+                                    { id: 's1-t17', defaultText: '[절차 안내]', className: 'font-bold text-blue-600 text-sm' },
+                                    { id: 's1-t18', defaultText: '우선적으로 절차에 대해 먼저 안내를 해드리면 환급을 받기 위해선 아시겠지만 기존에 다니셨던 병원들을 각각 직접 내방하셔서, 진료기록과 필요한 서류를 발급하셔서 보험사별로 제출해주셔야 되잖아요?' },
+                                    { id: 's1-t19', defaultText: '이런 업무를 저희가 대신해서 도와드릴 예정이구요~! 저희가 대신 처리를 하기 위해서 보험사측에 보상관련 담당자를 저희로 지정해서 청구해드리는 업무를 도와드릴건데요.' },
+                                 ] as { id: string; defaultText: string; className?: string }[]).map(({ id, defaultText, className }) => (
+                                    <textarea
+                                       key={id}
+                                       value={scriptOverrides[id] !== undefined ? scriptOverrides[id] : defaultText}
+                                       onChange={e => setScriptOverrides(prev => ({ ...prev, [id]: e.target.value }))}
+                                       rows={1}
+                                       className={clsx(
+                                          'w-full resize-none bg-transparent border border-transparent rounded px-2 py-1 leading-relaxed focus:outline-none focus:border-blue-200 focus:bg-blue-50/20 transition-colors overflow-hidden',
+                                          className ?? 'text-sm text-slate-700'
+                                       )}
+                                       style={{ minHeight: '1.75rem' }}
+                                       onInput={e => { const t = e.currentTarget; t.style.height = 'auto'; t.style.height = t.scrollHeight + 'px'; }}
+                                    />
+                                 ))}
+
+                                 {/* Action block: 설계사 관계 */}
+                                 <div className="relative group/lock">
+                                    <div className="bg-blue-50/30 p-3 rounded-lg border border-blue-200 space-y-2">
+                                       <p className="text-sm text-slate-700">
+                                          간혹가다가 가족분이 보험설계사이시거나 본인이 설계사인 경우에는 저희가 보상관련 담당자로 지정하기가 어렵거든요, 혹시 가족분이 설계사이시거나 본인이 설계사는 아니시죠?
+                                       </p>
+                                       <div className="flex flex-wrap gap-1">
+                                          {(['관계 없음', '가족', '지인'] as const).map(val => (
+                                             <button key={val} onClick={() => setJoinPath(val)} className={clsx('px-2.5 py-1 text-xs rounded border font-bold transition-colors', joinPath === val ? (val === '관계 없음' ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-rose-500 text-white border-rose-500') : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300')}>{val}</button>
+                                          ))}
+                                       </div>
+                                       {(joinPath === '가족' || joinPath === '지인') && <p className="text-[10px] text-rose-600 font-bold">⚠ 설계사 관계 — 보상담당자 지정 불가</p>}
+                                    </div>
+                                    <Lock size={10} className="absolute top-2 right-2 text-slate-300" />
                                  </div>
-                                 
-                                 <p>네 답변 감사합니다.</p>
-                                 
-                                 <div className="flex items-start justify-between gap-2 bg-blue-50/30 p-3 rounded-lg border border-blue-200">
-                                    <p className="flex-1">
-                                       <span className="text-blue-600 font-bold underline decoration-blue-200 decoration-2 underline-offset-2">{customer?.name || item.customerName}</span>님의 병원비만 확인했을 때 <span className="font-bold text-emerald-600">약 120만원</span>으로 확인되시는데 저희 더바다홈페이지 조회 하신 금액이랑 일치 하신가요??
-                                    </p>
-                                    <button
-                                       onClick={() => scrollToSection(insuranceRef, 'insurance')}
-                                       className="shrink-0 px-2 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700 transition-colors font-bold flex items-center gap-1"
-                                    >
-                                       <Globe size={14} /> 청구내역
-                                    </button>
+
+                                 {([
+                                    { id: 's1-t20', defaultText: '네 답변 감사합니다.' },
+                                 ] as { id: string; defaultText: string }[]).map(({ id, defaultText }) => (
+                                    <textarea
+                                       key={id}
+                                       value={scriptOverrides[id] !== undefined ? scriptOverrides[id] : defaultText}
+                                       onChange={e => setScriptOverrides(prev => ({ ...prev, [id]: e.target.value }))}
+                                       rows={1}
+                                       className="w-full resize-none bg-transparent border border-transparent rounded px-2 py-1 text-sm text-slate-700 leading-relaxed focus:outline-none focus:border-blue-200 focus:bg-blue-50/20 transition-colors overflow-hidden"
+                                       style={{ minHeight: '1.75rem' }}
+                                       onInput={e => { const t = e.currentTarget; t.style.height = 'auto'; t.style.height = t.scrollHeight + 'px'; }}
+                                    />
+                                 ))}
+
+                                 {/* Action block: 병원비 확인 */}
+                                 <div className="relative group/lock">
+                                    <div className="flex items-start justify-between gap-2 bg-blue-50/30 p-3 rounded-lg border border-blue-200">
+                                       <p className="flex-1">
+                                          <span className="text-blue-600 font-bold underline decoration-blue-200 decoration-2 underline-offset-2">{customer?.name || item.customerName}</span>님의 병원비만 확인했을 때 <span className="font-bold text-emerald-600">약 120만원</span>으로 확인되시는데 저희 더바다홈페이지 조회 하신 금액이랑 일치 하신가요??
+                                       </p>
+                                       <button
+                                          onClick={() => scrollToSection(insuranceRef, 'insurance')}
+                                          className="shrink-0 px-2 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700 transition-colors font-bold flex items-center gap-1"
+                                       >
+                                          <Globe size={14} /> 청구내역
+                                       </button>
+                                    </div>
+                                    <Lock size={10} className="absolute top-1 right-8 text-slate-300" />
                                  </div>
-                                 
-                                 <p>네 확인감사합니다.</p>
-                                 
+
+                                 {([
+                                    { id: 's1-t21', defaultText: '네 확인감사합니다.' },
+                                 ] as { id: string; defaultText: string }[]).map(({ id, defaultText }) => (
+                                    <textarea
+                                       key={id}
+                                       value={scriptOverrides[id] !== undefined ? scriptOverrides[id] : defaultText}
+                                       onChange={e => setScriptOverrides(prev => ({ ...prev, [id]: e.target.value }))}
+                                       rows={1}
+                                       className="w-full resize-none bg-transparent border border-transparent rounded px-2 py-1 text-sm text-slate-700 leading-relaxed focus:outline-none focus:border-blue-200 focus:bg-blue-50/20 transition-colors overflow-hidden"
+                                       style={{ minHeight: '1.75rem' }}
+                                       onInput={e => { const t = e.currentTarget; t.style.height = 'auto'; t.style.height = t.scrollHeight + 'px'; }}
+                                    />
+                                 ))}
+
                                  <div className="border-t border-slate-200 pt-4 mt-4"></div>
-                                 
-                                 <p className="font-bold text-blue-600">[추가 보험금 확인]</p>
-                                 <p>
-                                    방금 설명드렸듯 추가로 받을 수 있는 보험금이 있으신지 확인을 위해 간단하게 몇가지만 여쭈어 보겠습니다.
-                                 </p>
-                                 
-                                 <div className="flex items-start justify-between gap-2 bg-blue-50/30 p-3 rounded-lg border border-blue-200">
-                                    <p className="flex-1">
-                                       <span className="font-bold">운전자보험</span>이 가입되어 계시면 교통사고만 나셔도 자기부상치료비로 몇십만원씩은 무조건 나와서 여쭤보는건데 3년 이내 교통사고로 병원 방문하신적 있으신가요?
-                                    </p>
-                                    <button
-                                       onClick={() => scrollToSection(trafficAccidentRef, 'trafficAccident')}
-                                       className="shrink-0 px-2 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700 transition-colors font-bold flex items-center gap-1"
-                                    >
-                                       입력 <ChevronRight size={14} />
-                                    </button>
+
+                                 {([
+                                    { id: 's1-t22', defaultText: '[추가 보험금 확인]', className: 'font-bold text-blue-600 text-sm' },
+                                    { id: 's1-t23', defaultText: '방금 설명드렸듯 추가로 받을 수 있는 보험금이 있으신지 확인을 위해 간단하게 몇가지만 여쭈어 보겠습니다.' },
+                                 ] as { id: string; defaultText: string; className?: string }[]).map(({ id, defaultText, className }) => (
+                                    <textarea
+                                       key={id}
+                                       value={scriptOverrides[id] !== undefined ? scriptOverrides[id] : defaultText}
+                                       onChange={e => setScriptOverrides(prev => ({ ...prev, [id]: e.target.value }))}
+                                       rows={1}
+                                       className={clsx(
+                                          'w-full resize-none bg-transparent border border-transparent rounded px-2 py-1 leading-relaxed focus:outline-none focus:border-blue-200 focus:bg-blue-50/20 transition-colors overflow-hidden',
+                                          className ?? 'text-sm text-slate-700'
+                                       )}
+                                       style={{ minHeight: '1.75rem' }}
+                                       onInput={e => { const t = e.currentTarget; t.style.height = 'auto'; t.style.height = t.scrollHeight + 'px'; }}
+                                    />
+                                 ))}
+
+                                 {/* Action block: 교통사고 */}
+                                 <div className="relative group/lock">
+                                    <div className="bg-blue-50/30 p-3 rounded-lg border border-blue-200 space-y-2">
+                                       <p className="text-sm text-slate-700">
+                                          <span className="font-bold">운전자보험</span>이 가입되어 계시면 교통사고만 나셔도 자기부상치료비로 몇십만원씩은 무조건 나와서 여쭤보는건데 3년 이내 교통사고로 병원 방문하신적 있으신가요?
+                                       </p>
+                                       <div className="flex gap-1">
+                                          {(['없음', '있음'] as const).map(val => (
+                                             <button key={val} onClick={() => setTrafficAccident(val)} className={clsx('px-2.5 py-1 text-xs rounded border font-bold transition-colors', trafficAccident === val ? (val === '없음' ? 'bg-slate-600 text-white border-slate-600' : 'bg-amber-500 text-white border-amber-500') : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300')}>{val}</button>
+                                          ))}
+                                       </div>
+                                    </div>
+                                    <Lock size={10} className="absolute top-2 right-2 text-slate-300" />
                                  </div>
-                                 <p className="text-slate-500 text-xs">- 있을 경우 이부분도 같이 확인 해드릴게요~!</p>
-                                 
-                                 <div className="flex items-start justify-between gap-2 bg-blue-50/30 p-3 rounded-lg border border-blue-200">
-                                    <p className="flex-1">
-                                       <span className="font-bold">종합보험</span>에서 수술비나 진단비 내용 좀 체크해드리려고 하는데 3년 이내에 건강검진 하시면서 <span className="font-bold">용종제거</span> 하시거나 수술 시술 하신적 있으신가요?
-                                    </p>
-                                    <button
-                                       onClick={() => scrollToSection(surgeryRef, 'surgery')}
-                                       className="shrink-0 px-2 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700 transition-colors font-bold flex items-center gap-1"
-                                    >
-                                       입력 <ChevronRight size={14} />
-                                    </button>
+
+                                 {([
+                                    { id: 's1-t24', defaultText: '- 있을 경우 이부분도 같이 확인 해드릴게요~!', className: 'text-slate-500 text-xs' },
+                                 ] as { id: string; defaultText: string; className?: string }[]).map(({ id, defaultText, className }) => (
+                                    <textarea
+                                       key={id}
+                                       value={scriptOverrides[id] !== undefined ? scriptOverrides[id] : defaultText}
+                                       onChange={e => setScriptOverrides(prev => ({ ...prev, [id]: e.target.value }))}
+                                       rows={1}
+                                       className={clsx(
+                                          'w-full resize-none bg-transparent border border-transparent rounded px-2 py-1 leading-relaxed focus:outline-none focus:border-blue-200 focus:bg-blue-50/20 transition-colors overflow-hidden',
+                                          className ?? 'text-sm text-slate-700'
+                                       )}
+                                       style={{ minHeight: '1.75rem' }}
+                                       onInput={e => { const t = e.currentTarget; t.style.height = 'auto'; t.style.height = t.scrollHeight + 'px'; }}
+                                    />
+                                 ))}
+
+                                 {/* Action block: 용종/수술 */}
+                                 <div className="relative group/lock">
+                                    <div className="bg-blue-50/30 p-3 rounded-lg border border-blue-200 space-y-2">
+                                       <p className="text-sm text-slate-700">
+                                          <span className="font-bold">종합보험</span>에서 수술비나 진단비 내용 좀 체크해드리려고 하는데 3년 이내에 건강검진 하시면서 <span className="font-bold">용종제거</span> 하시거나 수술 시술 하신적 있으신가요?
+                                       </p>
+                                       <div className="flex gap-1">
+                                          {(['없음', '있음'] as const).map(val => (
+                                             <button key={val} onClick={() => setSurgery(val)} className={clsx('px-2.5 py-1 text-xs rounded border font-bold transition-colors', surgery === val ? (val === '없음' ? 'bg-slate-600 text-white border-slate-600' : 'bg-amber-500 text-white border-amber-500') : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300')}>{val}</button>
+                                          ))}
+                                       </div>
+                                    </div>
+                                    <Lock size={10} className="absolute top-2 right-2 text-slate-300" />
                                  </div>
-                                 <p className="text-slate-500 text-xs">
-                                    - 용종 제거가 있을 경우 보통 용종 제거하시면 종합보험에서 적게는 60만원 많게는 100만원도 넘게 나오시거든요 이렇게 못받으셨으면 이것도 확인좀 해드릴게요~!
-                                 </p>
-                                 
-                                 <div className="flex items-start justify-between gap-2 bg-blue-50/30 p-3 rounded-lg border border-blue-200">
-                                    <p className="flex-1">
-                                       <span className="font-bold">골절경험</span>이 있으시면 어떤 치료를 하셨던 상관없이 종합보험에서 골절진단비라고 해서 몇십만원씩 나오는 내용이 있는데 골절 경험 있으신가요~?
-                                    </p>
-                                    <button
-                                       onClick={() => scrollToSection(surgeryRef, 'surgery')}
-                                       className="shrink-0 px-2 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700 transition-colors font-bold flex items-center gap-1"
-                                    >
-                                       입력 <ChevronRight size={14} />
-                                    </button>
+
+                                 {([
+                                    { id: 's1-t25', defaultText: '- 용종 제거가 있을 경우 보통 용종 제거하시면 종합보험에서 적게는 60만원 많게는 100만원도 넘게 나오시거든요 이렇게 못받으셨으면 이것도 확인좀 해드릴게요~!', className: 'text-slate-500 text-xs' },
+                                 ] as { id: string; defaultText: string; className?: string }[]).map(({ id, defaultText, className }) => (
+                                    <textarea
+                                       key={id}
+                                       value={scriptOverrides[id] !== undefined ? scriptOverrides[id] : defaultText}
+                                       onChange={e => setScriptOverrides(prev => ({ ...prev, [id]: e.target.value }))}
+                                       rows={1}
+                                       className={clsx(
+                                          'w-full resize-none bg-transparent border border-transparent rounded px-2 py-1 leading-relaxed focus:outline-none focus:border-blue-200 focus:bg-blue-50/20 transition-colors overflow-hidden',
+                                          className ?? 'text-sm text-slate-700'
+                                       )}
+                                       style={{ minHeight: '1.75rem' }}
+                                       onInput={e => { const t = e.currentTarget; t.style.height = 'auto'; t.style.height = t.scrollHeight + 'px'; }}
+                                    />
+                                 ))}
+
+                                 {/* Action block: 골절 */}
+                                 <div className="relative group/lock">
+                                    <div className="bg-blue-50/30 p-3 rounded-lg border border-blue-200 space-y-2">
+                                       <p className="text-sm text-slate-700">
+                                          <span className="font-bold">골절경험</span>이 있으시면 어떤 치료를 하셨던 상관없이 종합보험에서 골절진단비라고 해서 몇십만원씩 나오는 내용이 있는데 골절 경험 있으신가요~?
+                                       </p>
+                                       <div className="flex gap-1">
+                                          {(['없음', '있음'] as const).map(val => (
+                                             <button key={val} onClick={() => setSurgery(val)} className={clsx('px-2.5 py-1 text-xs rounded border font-bold transition-colors', surgery === val ? (val === '없음' ? 'bg-slate-600 text-white border-slate-600' : 'bg-amber-500 text-white border-amber-500') : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300')}>{val}</button>
+                                          ))}
+                                       </div>
+                                    </div>
+                                    <Lock size={10} className="absolute top-2 right-2 text-slate-300" />
                                  </div>
-                                 <p className="text-slate-500 text-xs">- 있을 경우 이부분도 같이 확인 해드릴게요~!</p>
+
+                                 {([
+                                    { id: 's1-t26', defaultText: '- 있을 경우 이부분도 같이 확인 해드릴게요~!', className: 'text-slate-500 text-xs' },
+                                 ] as { id: string; defaultText: string; className?: string }[]).map(({ id, defaultText, className }) => (
+                                    <textarea
+                                       key={id}
+                                       value={scriptOverrides[id] !== undefined ? scriptOverrides[id] : defaultText}
+                                       onChange={e => setScriptOverrides(prev => ({ ...prev, [id]: e.target.value }))}
+                                       rows={1}
+                                       className={clsx(
+                                          'w-full resize-none bg-transparent border border-transparent rounded px-2 py-1 leading-relaxed focus:outline-none focus:border-blue-200 focus:bg-blue-50/20 transition-colors overflow-hidden',
+                                          className ?? 'text-sm text-slate-700'
+                                       )}
+                                       style={{ minHeight: '1.75rem' }}
+                                       onInput={e => { const t = e.currentTarget; t.style.height = 'auto'; t.style.height = t.scrollHeight + 'px'; }}
+                                    />
+                                 ))}
+
+                                 <div className="border-t border-slate-200 pt-4 mt-4"></div>
+
+                                 {([
+                                    { id: 's1-t27', defaultText: '[심평원 데이터 확인]', className: 'font-bold text-blue-600 text-sm' },
+                                    { id: 's1-t28', defaultText: '정부기관에서 저희한테 제공해준 데이터로 확인 되시는게 00년도 00병원에서 00으로 치료를 받으셨거든요~ 혹시 이 때 검사를 하시거나 시술이나 수술 또는 어떤 치료를 받으셨었는지 기억나시나요?' },
+                                    { id: 's1-t29', defaultText: '이런 부분들을 하나씩 저희가 확인해서 누락된 보험금들을 찾아드린다고 이해해주시면 되구요~!', className: 'text-slate-500 text-xs' },
+                                 ] as { id: string; defaultText: string; className?: string }[]).map(({ id, defaultText, className }) => (
+                                    <textarea
+                                       key={id}
+                                       value={scriptOverrides[id] !== undefined ? scriptOverrides[id] : defaultText}
+                                       onChange={e => setScriptOverrides(prev => ({ ...prev, [id]: e.target.value }))}
+                                       rows={1}
+                                       className={clsx(
+                                          'w-full resize-none bg-transparent border border-transparent rounded px-2 py-1 leading-relaxed focus:outline-none focus:border-blue-200 focus:bg-blue-50/20 transition-colors overflow-hidden',
+                                          className ?? 'text-sm text-slate-700'
+                                       )}
+                                       style={{ minHeight: '1.75rem' }}
+                                       onInput={e => { const t = e.currentTarget; t.style.height = 'auto'; t.style.height = t.scrollHeight + 'px'; }}
+                                    />
+                                 ))}
+
+                                 <div className="border-t border-slate-200 pt-4 mt-4"></div>
+
+                                 {/* Action block: 3대질병 */}
+                                 <div className="relative group/lock">
+                                    <div className="bg-blue-50/30 p-3 rounded-lg border border-blue-200 space-y-2">
+                                       <p className="text-sm text-slate-700">
+                                          마지막으로 <span className="font-bold">3대질병</span>인 암, 심혈관, 뇌혈관 질환을 앓고 계시거나 관련 진단을 받으신 적이 있으신가요?
+                                       </p>
+                                       <div className="flex gap-1">
+                                          {(['없음', '있음'] as const).map(val => (
+                                             <button
+                                                key={val}
+                                                onClick={() => setCriticalDisease(val)}
+                                                className={clsx(
+                                                   'px-2.5 py-1 text-xs rounded border font-bold transition-colors',
+                                                   criticalDisease === val
+                                                      ? (val === '없음' ? 'bg-slate-600 text-white border-slate-600' : 'bg-rose-500 text-white border-rose-500')
+                                                      : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'
+                                                )}
+                                             >
+                                                {val}
+                                             </button>
+                                          ))}
+                                       </div>
+                                    </div>
+                                    <Lock size={10} className="absolute top-2 right-2 text-slate-300" />
+                                 </div>
+
+                                 {/* Action block: 복용 약물 */}
+                                 <div className="relative group/lock">
+                                    <div className="bg-blue-50/30 p-3 rounded-lg border border-blue-200 space-y-2">
+                                       <p className="text-sm text-slate-700">
+                                          <span className="font-bold">혈압, 당뇨, 정신질환</span> 관련 약을 복용하고 계시는 거 있으신가요?
+                                       </p>
+                                       <div className="flex gap-1">
+                                          {(['없음', '있음'] as const).map(val => (
+                                             <button
+                                                key={val}
+                                                onClick={() => setMedication(val)}
+                                                className={clsx(
+                                                   'px-2.5 py-1 text-xs rounded border font-bold transition-colors',
+                                                   medication === val
+                                                      ? (val === '없음' ? 'bg-slate-600 text-white border-slate-600' : 'bg-amber-500 text-white border-amber-500')
+                                                      : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'
+                                                )}
+                                             >
+                                                {val}
+                                             </button>
+                                          ))}
+                                       </div>
+                                    </div>
+                                    <Lock size={10} className="absolute top-2 right-2 text-slate-300" />
+                                 </div>
+
+                                 <div className="border-t border-slate-200 pt-4 mt-4"></div>
+
+                                 {/* Closing block - locked */}
+                                 <div className="relative group/lock">
+                                    <div className="bg-emerald-50/50 p-4 rounded-lg border border-emerald-200">
+                                       <p className="text-sm text-slate-700">
+                                          네 확인 감사합니다. 말씀 주신 내용 토대로 고객님께서 더 받으실 수 있는 보험금 확인 후{' '}
+                                          <span className="font-bold text-emerald-600">2~3분 안쪽</span>으로 빠르게 전화 드릴 예정인데~ 다음 통화 괜찮으실까요?
+                                       </p>
+                                       <p className="text-xs text-slate-500 mt-2">네 그럼 그 시간에 맞춰 통화드리겠습니다~^^</p>
+                                    </div>
+                                    <Lock size={10} className="absolute top-2 right-2 text-slate-300" />
+                                 </div>
                               </div>
                            </>
                         )}
                         {activeTab === 'script2' && (
                            <>
-                              {/* 2차 상담 스크립트: 보험내용/건강상태/병력 체크 */}
-                              <div className="bg-purple-50/50 p-4 rounded-lg border border-purple-100 text-[#1e293b] font-bold text-sm shadow-sm">
-                                 <span className="text-purple-600 underline decoration-purple-300 decoration-2 underline-offset-2">{customer?.name || item.customerName}</span>님, 안녕하세요! 지난번 통화 이어서 몇 가지 추가 확인 도움드리겠습니다.
+                              {/* Opening - locked */}
+                              <div className="relative group/lock">
+                                 <div className="bg-purple-50/50 p-4 rounded-lg border border-purple-100 text-[#1e293b] font-bold text-sm shadow-sm">
+                                    <span className="text-purple-600 underline decoration-purple-300 decoration-2 underline-offset-2">{customer?.name || item.customerName}</span>님, 안녕하세요! 다시 연락드린 더바다 보상팀입니다.
+                                 </div>
+                                 <Lock size={10} className="absolute top-2 right-2 text-slate-300" />
                               </div>
 
-                              <div className="space-y-4 text-sm text-slate-700 leading-relaxed">
-                                 <p className="font-bold text-purple-600">[보험 정보 상세 확인]</p>
-                                 
-                                 <div className="flex items-start justify-between gap-2 bg-purple-50/30 p-3 rounded-lg border border-purple-200">
-                                    <p className="flex-1">
-                                       현재 납부하고 계신 <span className="font-bold">월 보험료</span>가 얼마 정도 되시는지 확인 가능하실까요? 
-                                       종합보험 가입 여부를 확인하기 위해 여쭤보는 건데요, 보통 <span className="font-bold text-purple-600">월 7만원 이상</span>이시면 종합보험이 포함되어 있을 가능성이 높습니다.
-                                    </p>
-                                    <button
-                                       onClick={() => scrollToSection(insuranceRef, 'insurance')}
-                                       className="shrink-0 px-2 py-1 bg-purple-600 text-white text-xs rounded hover:bg-purple-700 transition-colors font-bold flex items-center gap-1"
-                                    >
-                                       입력 <ChevronRight size={14} />
-                                    </button>
-                                 </div>
-                                 
-                                 <p>보험료 <span className="font-bold">미납</span>이 있으시면 청구를 해드려도 보험사에서 지급이 불가해서 확인드리는데, 현재 미납 중이거나 실효된 보험은 없으시죠?</p>
-                                 
-                                 <p>그리고 보험 <span className="font-bold">계약자와 보험료 납입자</span>가 동일하신지 확인 부탁드립니다.</p>
-
-                                 <div className="border-t border-slate-200 pt-4 mt-4"></div>
-
-                                 <p className="font-bold text-purple-600">[건강상태 및 병력 확인]</p>
-                                 <p>
-                                    지금부터는 정확한 환급금 산정을 위해 건강상태를 확인해드리겠습니다. 
-                                    간단한 질문 몇 가지만 답변 부탁드려요.
-                                 </p>
-
-                                 <div className="flex items-start justify-between gap-2 bg-purple-50/30 p-3 rounded-lg border border-purple-200">
-                                    <p className="flex-1">
-                                       최근 3개월 이내에 <span className="font-bold">병원 치료</span>나 <span className="font-bold">수술</span>을 받으신 적이 있으신가요?
-                                       현재 상해로 치료 받고 계신 내역이 있으신지도 확인 부탁드립니다.
-                                    </p>
-                                    <button
-                                       onClick={() => scrollToSection(surgeryRef, 'surgery')}
-                                       className="shrink-0 px-2 py-1 bg-purple-600 text-white text-xs rounded hover:bg-purple-700 transition-colors font-bold flex items-center gap-1"
-                                    >
-                                       입력 <ChevronRight size={14} />
-                                    </button>
-                                 </div>
-
-                                 <div className="flex items-start justify-between gap-2 bg-purple-50/30 p-3 rounded-lg border border-purple-200">
-                                    <p className="flex-1">
-                                       <span className="font-bold">약 복용</span> 관련해서도 확인드리는데요, 현재 복용 중이신 약이 있으시다면 
-                                       최근에 <span className="font-bold">용량이나 종류가 변경</span>된 부분이 있으신가요?
-                                    </p>
-                                    <button
-                                       onClick={() => scrollToSection(medicationRef, 'medication')}
-                                       className="shrink-0 px-2 py-1 bg-purple-600 text-white text-xs rounded hover:bg-purple-700 transition-colors font-bold flex items-center gap-1"
-                                    >
-                                       입력 <ChevronRight size={14} />
-                                    </button>
-                                 </div>
-
-                                 <div className="flex items-start justify-between gap-2 bg-rose-50/50 p-3 rounded-lg border border-rose-200">
-                                    <div className="flex-1">
-                                       <p className="font-bold text-rose-600 text-xs mb-1">[중대질환 확인 - 주의]</p>
-                                       <p>
-                                          혹시 <span className="font-bold text-rose-600">암, 뇌혈관질환, 심장질환, 신장, 간, 폐질환</span> 등 
-                                          중대질환 관련하여 치료를 받으셨거나 현재 치료 중이신 부분이 있으신가요?
+                              <div className="space-y-3 text-sm text-slate-700 leading-relaxed">
+                                 {/* Action block: 예상 보험금 */}
+                                 <div className="relative group/lock">
+                                    <div className="bg-purple-50/30 p-3 rounded-lg border border-purple-200 space-y-2">
+                                       <p className="text-sm text-slate-700">
+                                          우선 저희측에서 확인결과 <span className="font-bold">{customer?.name || item.customerName}</span>님이 수령하실수 있는 예상 보험금이 확인되고 있습니다.
                                        </p>
-                                       <p className="text-xs text-rose-500 mt-1">
-                                          * 완치 후 5년 경과 & 현재 악화소견 없으면 진행 가능
+                                       <p className="text-xs text-slate-500">
+                                          예상 금액 안내는 내부 검토 기준으로만 참고하고 별도 입력은 진행하지 않습니다.
                                        </p>
                                     </div>
-                                    <button
-                                       onClick={() => scrollToSection(criticalDiseaseRef, 'criticalDisease')}
-                                       className="shrink-0 px-2 py-1 bg-rose-600 text-white text-xs rounded hover:bg-rose-700 transition-colors font-bold flex items-center gap-1"
-                                    >
-                                       입력 <ChevronRight size={14} />
-                                    </button>
+                                    <Lock size={10} className="absolute top-2 right-2 text-slate-300" />
                                  </div>
 
                                  <div className="border-t border-slate-200 pt-4 mt-4"></div>
 
-                                 <p className="font-bold text-purple-600">[설계사 관계 및 보험사 예외질환]</p>
-                                 
-                                 <div className="flex items-start justify-between gap-2 bg-purple-50/30 p-3 rounded-lg border border-purple-200">
-                                    <p className="flex-1">
-                                       기존 보험 설계사분과 <span className="font-bold">친인척 관계</span>이시거나 본인이 설계사는 아니시죠?
-                                       <br />
-                                       <span className="text-xs text-slate-500">* 친인척 관계인 경우 보상담당자 지정이 어려워 진행 불가</span>
-                                    </p>
-                                    <button
-                                       onClick={() => scrollToSection(designerRelationRef, 'designerRelation')}
-                                       className="shrink-0 px-2 py-1 bg-purple-600 text-white text-xs rounded hover:bg-purple-700 transition-colors font-bold flex items-center gap-1"
-                                    >
-                                       입력 <ChevronRight size={14} />
-                                    </button>
-                                 </div>
+                                 {([
+                                    { id: 's2-t1', defaultText: '원활한 보험금 환급을 위해 보험가입내역을 열람해 봐야 하는데 동의해주실 수 있으시죠~?' },
+                                 ] as { id: string; defaultText: string }[]).map(({ id, defaultText }) => (
+                                    <textarea
+                                       key={id}
+                                       value={scriptOverrides[id] !== undefined ? scriptOverrides[id] : defaultText}
+                                       onChange={e => setScriptOverrides(prev => ({ ...prev, [id]: e.target.value }))}
+                                       rows={1}
+                                       className="w-full resize-none bg-transparent border border-transparent rounded px-2 py-1 text-sm text-slate-700 leading-relaxed focus:outline-none focus:border-blue-200 focus:bg-blue-50/20 transition-colors overflow-hidden"
+                                       style={{ minHeight: '1.75rem' }}
+                                       onInput={e => { const t = e.currentTarget; t.style.height = 'auto'; t.style.height = t.scrollHeight + 'px'; }}
+                                    />
+                                 ))}
 
-                                 <div className="bg-amber-50 p-3 rounded-lg border border-amber-200">
-                                    <p className="text-xs font-bold text-amber-800 mb-1">보험사(삼성화재) 예외질환 체크</p>
-                                    <p className="text-xs text-amber-700">
-                                       현재 삼성화재 기준 특정 질환의 경우 청구가 제한될 수 있습니다. 
-                                       해당 여부를 확인 후 최종 진행 여부를 결정합니다.
-                                    </p>
+                                 <div className="border-t border-slate-200 pt-4 mt-4"></div>
+
+                                 {([
+                                    { id: 's2-t2', defaultText: '보험사 측에서 보험금 지급거절을 하거나 적게 주는 경우 법무법인 대건에서 자문이나 소송도 도와드리고 있는데 필요하시면 같이 안내드릴 수 있습니다.' },
+                                 ] as { id: string; defaultText: string }[]).map(({ id, defaultText }) => (
+                                    <textarea
+                                       key={id}
+                                       value={scriptOverrides[id] !== undefined ? scriptOverrides[id] : defaultText}
+                                       onChange={e => setScriptOverrides(prev => ({ ...prev, [id]: e.target.value }))}
+                                       rows={1}
+                                       className="w-full resize-none bg-transparent border border-transparent rounded px-2 py-1 text-sm text-slate-700 leading-relaxed focus:outline-none focus:border-blue-200 focus:bg-blue-50/20 transition-colors overflow-hidden"
+                                       style={{ minHeight: '1.75rem' }}
+                                       onInput={e => { const t = e.currentTarget; t.style.height = 'auto'; t.style.height = t.scrollHeight + 'px'; }}
+                                    />
+                                 ))}
+
+                                 {/* Action block: 수수료 */}
+                                 <div className="relative group/lock">
+                                    <div className="bg-purple-50/30 p-3 rounded-lg border border-purple-200 space-y-2">
+                                       <p className="text-sm text-slate-700">
+                                          환급 서비스 수수료가 있으신데요 최종 환급금액의 10%를 후불로 청구드리고 있구요.
+                                       </p>
+                                       <p className="text-xs text-slate-500">
+                                          별도 체크 입력 없이 안내 멘트 기준으로만 활용합니다.
+                                       </p>
+                                    </div>
+                                    <Lock size={10} className="absolute top-2 right-2 text-slate-300" />
                                  </div>
 
                                  <div className="border-t border-slate-200 pt-4 mt-4"></div>
 
-                                 {/* 진행 가능 시 후킹 멘트 */}
-                                 <div className="bg-emerald-50 p-4 rounded-lg border border-emerald-200">
-                                    <p className="font-bold text-emerald-700 text-xs mb-2">[진행 가능 시 - 후킹 멘트]</p>
-                                    <p className="text-xs text-emerald-700">
-                                       심평원 진료 이력을 확인해보니 2~3가지 치료 이력이 확인되는데요, 
-                                       정확히 무슨 진료를 받으셨는지 기억이 안 나실 수도 있는데 이런 경우 
-                                       <span className="font-bold">보험금 청구 누락 가능성</span>이 있습니다.
-                                    </p>
-                                    <p className="text-xs text-emerald-600 mt-2">
-                                       용종 제거, 골절, 교통사고 등 추가 보상 가능 항목이 있으시면 함께 확인해드리겠습니다!
-                                    </p>
+                                 {/* Action block: 소개 */}
+                                 <div className="relative group/lock">
+                                    <div className="bg-purple-50/30 p-3 rounded-lg border border-purple-200 space-y-2">
+                                       <p className="text-sm text-slate-700">
+                                          가족이나 지인분들이 같이 신청한 경우 환급수수료를 일부 할인해드리고 있거든요~!
+                                       </p>
+                                       <div className="flex gap-1">
+                                          {(['없음', '있음'] as const).map(val => (
+                                             <button
+                                                key={val}
+                                                type="button"
+                                                onClick={() => {
+                                                   const nextHasReferral = val === '있음';
+                                                   setHasReferral(nextHasReferral);
+                                                   if (!nextHasReferral) {
+                                                      setReferralNote('');
+                                                   }
+                                                }}
+                                                className={clsx(
+                                                   'px-2.5 py-1 text-xs rounded border font-bold transition-colors',
+                                                   hasReferral === (val === '있음')
+                                                      ? (val === '없음' ? 'bg-slate-600 text-white border-slate-600' : 'bg-purple-600 text-white border-purple-600')
+                                                      : 'bg-white text-slate-600 border-slate-200 hover:border-purple-300'
+                                                )}
+                                             >
+                                                {val}
+                                             </button>
+                                          ))}
+                                       </div>
+                                       {hasReferral && (
+                                          <input
+                                             type="text"
+                                             value={referralNote}
+                                             onChange={e => setReferralNote(e.target.value)}
+                                             className="w-full p-1.5 text-xs border border-slate-200 rounded bg-white focus:border-purple-400 focus:outline-none"
+                                             placeholder="소개 대상 또는 관계 메모"
+                                          />
+                                       )}
+                                    </div>
+                                    <Lock size={10} className="absolute top-2 right-2 text-slate-300" />
                                  </div>
 
-                                 {/* 진행 불가 시 안내 멘트 */}
-                                 <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
-                                    <p className="font-bold text-slate-600 text-xs mb-2">[진행 불가 시 - 표준 안내 멘트]</p>
-                                    <p className="text-xs text-slate-600">
-                                       확인 결과 현재 고객님의 경우 미청구 보험금이 부존재하는 것으로 확인되어 
-                                       금번 서비스 진행이 어려운 점 양해 부탁드립니다.
-                                    </p>
-                                    <p className="text-[10px] text-rose-500 mt-2 font-bold">
-                                       * 불가 시 반드시 상태값을 변경하고 사유를 선택해주세요
-                                    </p>
-                                 </div>
+                                 <div className="border-t border-slate-200 pt-4 mt-4"></div>
 
-                                 {/* 동반신청 안내 */}
-                                 <div className="flex items-start justify-between gap-2 bg-blue-50/30 p-3 rounded-lg border border-blue-200">
-                                    <p className="flex-1">
-                                       혹시 가족분이나 지인분 중에 <span className="font-bold">3년 환급금 서비스를 함께 신청</span>하실 분이 계시면 
-                                       이름과 연락처를 남겨주시면 함께 안내해드리겠습니다.
-                                    </p>
-                                    <button
-                                       onClick={() => scrollToSection(companionRef, 'companion')}
-                                       className="shrink-0 px-2 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700 transition-colors font-bold flex items-center gap-1"
-                                    >
-                                       입력 <ChevronRight size={14} />
-                                    </button>
+                                 {([
+                                    { id: 's2-t3', defaultText: '이후 진행 관련 세부 안내는 전담팀에서 다시 연락드릴 예정이니 안내톡만 확인 부탁드릴게요~!' },
+                                 ] as { id: string; defaultText: string }[]).map(({ id, defaultText }) => (
+                                    <textarea
+                                       key={id}
+                                       value={scriptOverrides[id] !== undefined ? scriptOverrides[id] : defaultText}
+                                       onChange={e => setScriptOverrides(prev => ({ ...prev, [id]: e.target.value }))}
+                                       rows={1}
+                                       className="w-full resize-none bg-transparent border border-transparent rounded px-2 py-1 text-sm text-slate-700 leading-relaxed focus:outline-none focus:border-blue-200 focus:bg-blue-50/20 transition-colors overflow-hidden"
+                                       style={{ minHeight: '1.75rem' }}
+                                       onInput={e => { const t = e.currentTarget; t.style.height = 'auto'; t.style.height = t.scrollHeight + 'px'; }}
+                                    />
+                                 ))}
+
+                                 <div className="border-t border-slate-200 pt-4 mt-4"></div>
+
+                                 {/* Closing block - locked */}
+                                 <div className="relative group/lock">
+                                    <div className="bg-emerald-50/50 p-4 rounded-lg border border-emerald-200">
+                                       <p className="text-sm text-slate-700">
+                                          저는 상담은 여기서 종료하는걸로 하고, 많은 보험금 받아가시길 바라겠습니다.
+                                       </p>
+                                    </div>
+                                    <Lock size={10} className="absolute top-2 right-2 text-slate-300" />
                                  </div>
                               </div>
                            </>
@@ -2096,8 +2269,14 @@ function ConsultationDetail({ item, onBack, type }: { item: any, onBack: () => v
                         <textarea 
                            className="w-full h-32 p-3 text-xs bg-slate-50 border border-slate-200 rounded resize-none focus:outline-none focus:border-blue-500 transition-colors"
                            placeholder="상담 내용을 입력하세요..."
+                           value={consultationMemo}
+                           onChange={(e) => setConsultationMemo(e.target.value)}
                         />
-                        <button className="w-full py-2 bg-[#1e293b] text-white text-xs font-bold rounded hover:bg-slate-800 transition-colors">
+                        <button
+                           type="button"
+                           onClick={() => toast.success('상담 메모를 저장했습니다.')}
+                           className="w-full py-2 bg-[#1e293b] text-white text-xs font-bold rounded hover:bg-slate-800 transition-colors"
+                        >
                            메모 저장
                         </button>
                      </div>

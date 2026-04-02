@@ -647,7 +647,7 @@ export function IssuanceMaster({ initialClaimId, onNavigate }: IssuanceMasterPro
           <div>
             <h2 className="text-lg font-bold tracking-tight text-[#1e293b]">서류 발급 대행 - 전체 리스트</h2>
             <p className="mt-1 text-xs font-light text-slate-400">전체 방문지 기준으로 직원 배정과 업로드 진행 현황을 확인합니다.</p>
-            <div className="mt-3 flex items-center gap-2">
+            <div className="mt-3 flex flex-wrap items-center gap-2">
               <button
                 type="button"
                 onClick={() => {
@@ -687,7 +687,7 @@ export function IssuanceMaster({ initialClaimId, onNavigate }: IssuanceMasterPro
             </div>
           </div>
 
-          <div className="w-full max-w-xs relative">
+          <div className="relative w-full max-w-full sm:max-w-xs">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
             <input
               type="text"
@@ -705,7 +705,7 @@ export function IssuanceMaster({ initialClaimId, onNavigate }: IssuanceMasterPro
       </div>
 
       {viewMode !== 'people' ? (
-      <div className="border-b border-slate-100 px-6 py-3 flex items-center justify-between">
+      <div className="border-b border-slate-100 px-6 py-3 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
         <div className="flex flex-wrap items-center gap-2">
           {([
             { key: 'all', label: '전체', count: stats.total, minWidth: 'min-w-[76px]' },

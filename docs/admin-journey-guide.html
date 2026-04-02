@@ -1,0 +1,1154 @@
+<!DOCTYPE html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>더바다 어드민 고객여정 운영 가이드</title>
+    <style>
+      :root {
+        --bg: #f3f6fb;
+        --card: #ffffff;
+        --text: #172033;
+        --muted: #60708c;
+        --line: #d8e0ec;
+        --brand: #18324f;
+        --brand-soft: #edf3ff;
+        --accent: #0f766e;
+        --accent-soft: #e6f8f4;
+        --amber: #b7791f;
+        --amber-soft: #fff7e5;
+        --rose: #b8325d;
+        --rose-soft: #fff0f5;
+        --blue: #2358c5;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background: linear-gradient(180deg, #f7faff 0%, #eef3f8 100%);
+        color: var(--text);
+        line-height: 1.6;
+      }
+
+      .page {
+        width: min(1200px, calc(100vw - 48px));
+        margin: 32px auto 80px;
+      }
+
+      .hero,
+      .section,
+      .panel,
+      .flow-card,
+      .screen-card,
+      .route-card {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 24px;
+        box-shadow: 0 14px 40px rgba(20, 36, 68, 0.06);
+      }
+
+      .hero {
+        padding: 32px;
+        display: grid;
+        grid-template-columns: 1.15fr 0.85fr;
+        gap: 28px;
+      }
+
+      .eyebrow {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 14px;
+        border-radius: 999px;
+        background: var(--brand-soft);
+        color: var(--brand);
+        font-size: 13px;
+        font-weight: 700;
+      }
+
+      h1 {
+        margin: 18px 0 12px;
+        font-size: 40px;
+        line-height: 1.15;
+      }
+
+      h2 {
+        margin: 0;
+        font-size: 28px;
+        line-height: 1.2;
+      }
+
+      h3 {
+        margin: 0 0 10px;
+        font-size: 20px;
+      }
+
+      p {
+        margin: 0;
+      }
+
+      .lead {
+        color: var(--muted);
+        font-size: 16px;
+      }
+
+      .hero-meta {
+        margin-top: 24px;
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 12px;
+      }
+
+      .meta-card {
+        padding: 14px 16px;
+        border-radius: 18px;
+        background: #f8fbff;
+        border: 1px solid #e6edf8;
+      }
+
+      .meta-card strong {
+        display: block;
+        font-size: 22px;
+        margin-top: 6px;
+      }
+
+      .hero-visual {
+        display: grid;
+        gap: 14px;
+      }
+
+      .screen-card {
+        overflow: hidden;
+      }
+
+      .screen-card img {
+        display: block;
+        width: 100%;
+        height: auto;
+      }
+
+      .screen-caption {
+        padding: 14px 16px 18px;
+        border-top: 1px solid var(--line);
+      }
+
+      .section {
+        margin-top: 24px;
+        padding: 28px;
+      }
+
+      .summary-grid,
+      .route-grid,
+      .screen-grid,
+      .flow-grid,
+      .ops-grid {
+        display: grid;
+        gap: 16px;
+      }
+
+      .summary-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        margin-top: 20px;
+      }
+
+      .route-grid {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        margin-top: 20px;
+      }
+
+      .screen-grid {
+        grid-template-columns: 0.48fr 1.12fr 0.8fr;
+        margin-top: 20px;
+      }
+
+      .flow-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        margin-top: 22px;
+      }
+
+      .ops-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        margin-top: 18px;
+      }
+
+      .panel {
+        padding: 18px 18px 20px;
+      }
+
+      .route-card {
+        padding: 18px;
+      }
+
+      .route-badge,
+      .channel,
+      .tag {
+        display: inline-flex;
+        align-items: center;
+        border-radius: 999px;
+        padding: 5px 10px;
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      .route-badge {
+        background: var(--brand-soft);
+        color: var(--brand);
+      }
+
+      .channel.system {
+        background: #edf3ff;
+        color: #2952b3;
+      }
+
+      .channel.online {
+        background: var(--accent-soft);
+        color: var(--accent);
+      }
+
+      .channel.offline {
+        background: var(--amber-soft);
+        color: var(--amber);
+      }
+
+      .tag.skip {
+        background: var(--rose-soft);
+        color: var(--rose);
+      }
+
+      .tag.fast {
+        background: #eefbf0;
+        color: #2a7f38;
+      }
+
+      .route-card ul,
+      .panel ul,
+      .flow-card ul {
+        margin: 12px 0 0;
+        padding-left: 18px;
+        color: var(--muted);
+      }
+
+      .flow-card {
+        padding: 20px;
+      }
+
+      .flow-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+      }
+
+      .journey-strip {
+        margin-top: 18px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+      }
+
+      .journey-step {
+        flex: 1 1 160px;
+        min-height: 110px;
+        border-radius: 18px;
+        padding: 14px;
+        background: linear-gradient(180deg, #fafcff 0%, #f1f6ff 100%);
+        border: 1px solid #e3ebf9;
+      }
+
+      .journey-step strong {
+        display: block;
+        margin-bottom: 8px;
+        color: var(--brand);
+      }
+
+      .journey-step small {
+        display: block;
+        color: var(--muted);
+      }
+
+      .ops-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 16px;
+        font-size: 14px;
+      }
+
+      .ops-table th,
+      .ops-table td {
+        border-top: 1px solid var(--line);
+        padding: 12px 10px;
+        text-align: left;
+        vertical-align: top;
+      }
+
+      .ops-table th {
+        color: var(--muted);
+        font-weight: 700;
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+      }
+
+      .footer-note {
+        margin-top: 18px;
+        padding: 14px 16px;
+        border-radius: 16px;
+        background: #f8fafc;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .print-note {
+        margin-top: 18px;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      @media (max-width: 960px) {
+        .page {
+          width: calc(100vw - 24px);
+          margin: 12px auto 48px;
+        }
+
+        .hero,
+        .summary-grid,
+        .route-grid,
+        .screen-grid,
+        .flow-grid,
+        .ops-grid,
+        .hero-meta {
+          grid-template-columns: 1fr;
+        }
+
+        h1 {
+          font-size: 32px;
+        }
+      }
+
+      @media print {
+        body {
+          background: #fff;
+        }
+
+        .page {
+          width: 100%;
+          margin: 0;
+        }
+
+        .hero,
+        .section,
+        .panel,
+        .flow-card,
+        .screen-card,
+        .route-card {
+          box-shadow: none;
+          break-inside: avoid;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <section class="hero">
+        <div>
+          <div class="eyebrow">더바다 Ops Admin · Journey Playbook</div>
+          <h1>고객여정 기준 어드민 운영 가이드</h1>
+          <p class="lead">
+            3년환급(S), 소개(R), 간편청구(Q) 여정에 따라 더바다 어드민 안에서 어떤 화면을 열고,
+            어느 팀이 어떤 순서로 처리해야 하는지 한 번에 공유할 수 있도록 정리한 HTML 가이드입니다.
+          </p>
+
+          <div class="hero-meta">
+            <div class="meta-card">
+              <span>여정 유형</span>
+              <strong>3종</strong>
+              <p class="lead">S / R / Q</p>
+            </div>
+            <div class="meta-card">
+              <span>핵심 운영팀</span>
+              <strong>5개</strong>
+              <p class="lead">콜 · 영업 · 청구 · CS · 관리/준법</p>
+            </div>
+            <div class="meta-card">
+              <span>공유 형식</span>
+              <strong>HTML</strong>
+              <p class="lead">브라우저 열기, PDF 저장, 링크 공유 가능</p>
+            </div>
+          </div>
+
+          <div class="footer-note">
+            문서 기준: <strong>THEBADA_JOURNEY_MASTER.md</strong>,
+            <strong>ARCHITECTURE.md</strong>, 현재 어드민 네비게이션 구조.
+            캡처 이미지는 실제 어드민 대표 화면 기준으로 사용했습니다.
+          </div>
+        </div>
+
+        <div class="hero-visual">
+          <div class="screen-card">
+            <img src="./assets/admin-journey-guide/_probe-home.png" alt="더바다 어드민 메인 대표 화면" />
+            <div class="screen-caption">
+              <strong>대표 화면 캡처</strong>
+              <p class="lead">어드민 기본 진입 화면인 접수 현황. 실제 운영자는 이 화면에서 여정 진입점을 가장 많이 확인합니다.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2>1. 먼저 이해해야 할 운영 구조</h2>
+        <div class="summary-grid">
+          <div class="panel">
+            <div class="route-badge">Journey S</div>
+            <h3>3년환급</h3>
+            <p class="lead">광고/검색 유입 고객. 유입 → 상담 → 미팅 → 청구 → 지급까지 전체 흐름을 거치는 풀 프로세스입니다.</p>
+          </div>
+          <div class="panel">
+            <div class="route-badge">Journey R</div>
+            <h3>소개</h3>
+            <p class="lead">기존 고객 추천 기반 유입. 배정/TM을 줄이고 기존 담당자에게 Same-owner로 연결되는 것이 핵심입니다.</p>
+          </div>
+          <div class="panel">
+            <div class="route-badge">Journey Q</div>
+            <h3>간편청구</h3>
+            <p class="lead">기존 고객의 추가 청구 요청. 미팅보다 콜/분석/청구 중심으로 빠르게 처리하는 축약 여정입니다.</p>
+          </div>
+        </div>
+
+        <div class="route-grid">
+          <div class="route-card">
+            <div class="channel system">🖥️ 전산</div>
+            <h3>어드민</h3>
+            <p class="lead">Requests, Consultation, Handoff, Claims, Aftercare 등 내부 처리 화면</p>
+          </div>
+          <div class="route-card">
+            <div class="channel online">🌐 온라인</div>
+            <h3>외부 연동</h3>
+            <p class="lead">심평원, 카카오 알림톡, 글로싸인, ENFAX, 보험사 포털 등</p>
+          </div>
+          <div class="route-card">
+            <div class="channel offline">📵 오프라인</div>
+            <h3>전화/대면</h3>
+            <p class="lead">TM 전화, 현장 미팅, 병원 방문, 종이 서명, 수기 확인</p>
+          </div>
+          <div class="route-card">
+            <div class="route-badge">운영 원칙</div>
+            <h3>Request Centric</h3>
+            <p class="lead">어드민은 고객 단위가 아니라 접수(Request) 단위로 전체 여정을 추적합니다.</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2>2. 어드민에서 자주 쓰는 네비게이션</h2>
+        <div class="screen-grid">
+          <div class="screen-card">
+            <img src="./assets/admin-journey-guide/sidebar-crop.png" alt="더바다 어드민 사이드바" />
+            <div class="screen-caption">
+              <strong>사이드바</strong>
+              <p class="lead">대부분의 업무는 왼쪽 메뉴 이동만으로 시작합니다.</p>
+            </div>
+          </div>
+          <div class="screen-card">
+            <img src="./assets/admin-journey-guide/requests-panel-crop.png" alt="접수 현황 메인 패널" />
+            <div class="screen-caption">
+              <strong>접수 현황 패널</strong>
+              <p class="lead">신규 유입과 단계별 병목을 가장 먼저 확인하는 화면입니다.</p>
+            </div>
+          </div>
+          <div class="screen-card">
+            <img src="./assets/admin-journey-guide/header-crop.png" alt="헤더 영역" />
+            <div class="screen-caption">
+              <strong>상단 헤더</strong>
+              <p class="lead">현재 화면 제목, 검색, 역할 표시를 통해 운영 컨텍스트를 유지합니다.</p>
+            </div>
+          </div>
+        </div>
+
+        <table class="ops-table">
+          <thead>
+            <tr>
+              <th>업무 목적</th>
+              <th>주요 메뉴</th>
+              <th>언제 여나</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>신규 유입/신청 현황 파악</td>
+              <td>접수 관리, DB 분류/배정</td>
+              <td>S1~S4 시작 시점, 콜팀장 배정 루틴</td>
+            </tr>
+            <tr>
+              <td>고객 통화, 스크립트, 이관 준비</td>
+              <td>상담/TM, 미팅 인계</td>
+              <td>S5~S6, Q3 고객 콜 처리</td>
+            </tr>
+            <tr>
+              <td>미팅 준비/실행/계약</td>
+              <td>미팅/계약, 계약 목록</td>
+              <td>S7~S9, R3~R7</td>
+            </tr>
+            <tr>
+              <td>청구·서류발급·최종분석</td>
+              <td>청구/분석, 발급 관리</td>
+              <td>S10~S13, Q4~Q7</td>
+            </tr>
+            <tr>
+              <td>사후관리·소개·재유입</td>
+              <td>지급/사후, Growth Loop</td>
+              <td>S15~S17, R12~R14, Q8~Q9</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="section">
+        <h2>3. 실무자가 바로 이해하는 대표 사례</h2>
+        <div class="flow-grid">
+          <div class="flow-card">
+            <div class="flow-head">
+              <div>
+                <div class="route-badge">사례 S-01</div>
+                <h3>송혜숙 · 3년환급</h3>
+              </div>
+              <div class="channel system">미팅팀 진행중</div>
+            </div>
+            <ul>
+              <li><strong>접수ID:</strong> R-105376</li>
+              <li><strong>현재 상태:</strong> 가망 고객</li>
+              <li><strong>현재 단계:</strong> 미팅</li>
+              <li><strong>담당자:</strong> 조영훈</li>
+              <li><strong>실무 해석:</strong> 콜 인계 후 영업팀이 미팅 전환 가능성을 검토하는 케이스</li>
+            </ul>
+          </div>
+          <div class="flow-card">
+            <div class="flow-head">
+              <div>
+                <div class="route-badge">사례 Q-01</div>
+                <h3>홍상엽 · 간편청구</h3>
+              </div>
+              <div class="channel online">미팅 확정</div>
+            </div>
+            <ul>
+              <li><strong>접수ID:</strong> R-TBDH17720260313</li>
+              <li><strong>담당자:</strong> 전선덕</li>
+              <li><strong>위치:</strong> 경기도 광명시 광명동</li>
+              <li><strong>현재 상태:</strong> 미팅 확정</li>
+              <li><strong>실무 해석:</strong> Q 여정이지만 실제론 미팅 확정까지 올라온 추가청구/보장점검형 케이스</li>
+            </ul>
+          </div>
+          <div class="flow-card">
+            <div class="flow-head">
+              <div>
+                <div class="route-badge">사례 R-01</div>
+                <h3>김영수 → 김영희 소개</h3>
+              </div>
+              <div class="tag fast">Same-owner 적용</div>
+            </div>
+            <ul>
+              <li><strong>소개 관계:</strong> 형제</li>
+              <li><strong>현재 스텝:</strong> R8</li>
+              <li><strong>담당자:</strong> 박영업</li>
+              <li><strong>리워드:</strong> 지급 완료</li>
+              <li><strong>실무 해석:</strong> 기존 소개인이 전환 후 피소개인도 청구/지급 단계까지 진입한 성공 케이스</li>
+            </ul>
+          </div>
+          <div class="flow-card">
+            <div class="flow-head">
+              <div>
+                <div class="route-badge">재유입 사례</div>
+                <h3>김영희 재유입 → S4 자동배정</h3>
+              </div>
+              <div class="tag fast">자동배정완료</div>
+            </div>
+            <ul>
+              <li><strong>이전 여정:</strong> R-2026-015</li>
+              <li><strong>재유입일:</strong> 2026-03-31</li>
+              <li><strong>현재 스텝:</strong> S4</li>
+              <li><strong>담당자:</strong> 박영업</li>
+              <li><strong>실무 해석:</strong> 소개 고객이 다시 유입됐을 때 기존 담당자에게 자동 복귀된 케이스</li>
+            </ul>
+          </div>
+        </div>
+
+        <table class="ops-table">
+          <thead>
+            <tr>
+              <th>운영 영역</th>
+              <th>샘플 값</th>
+              <th>실무 포인트</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>관리업무</td>
+              <td>장하린 · 한화손보 · 건강플랜 · 월납 82,000원 · <strong>연체</strong></td>
+              <td>계속분 수납 화면에서 연체/미납 건을 우선 모니터링해야 함</td>
+            </tr>
+            <tr>
+              <td>준법감시</td>
+              <td>MK-104 · 소개 이벤트 카드뉴스 · <strong>반려</strong> · 오인유발</td>
+              <td>마케팅 소재 심의는 실제 반려/수정요청 값까지 봐야 감이 옴</td>
+            </tr>
+            <tr>
+              <td>Chinese Wall</td>
+              <td>마케팅팀 · 위반 2건 · 광고소재 검토 전 고객정보 열람</td>
+              <td>준법 화면은 단순 KPI보다 위반 이력 텍스트가 중요</td>
+            </tr>
+            <tr>
+              <td>청구 발급</td>
+              <td>투에이치 · 서류 발급 대행 · 최근 점검 결과 <strong>보완</strong></td>
+              <td>위탁업체 관리 화면은 발급 요청/실적/KPI를 함께 봐야 실무적</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="footer-note">
+          이 문서의 사례 값은 현재 어드민 mock 데이터와 Sprint 4 운영 화면의 샘플 값을 기준으로 정리했습니다.
+          즉, “예시 문장”이 아니라 실제 화면에서 보이는 유형의 값으로 이해하면 됩니다.
+        </div>
+      </section>
+
+      <section class="section">
+        <h2>4. 3년환급(S) 여정 운영 가이드</h2>
+        <div class="flow-card">
+          <div class="flow-head">
+            <div>
+              <div class="route-badge">Journey S</div>
+              <h3>광고/검색 유입 → 지급까지의 풀 프로세스</h3>
+            </div>
+            <div class="tag fast">가장 표준적인 운영 흐름</div>
+          </div>
+          <div class="journey-strip">
+            <div class="journey-step">
+              <strong>S1~S3 유입/조회/신청</strong>
+              <small>메뉴: 접수 관리</small>
+              <small>핵심: 신청 건 확인, 조회 완료/이탈 현황 파악</small>
+            </div>
+            <div class="journey-step">
+              <strong>S4 선별/배정</strong>
+              <small>메뉴: DB 분류/배정</small>
+              <small>핵심: 가능DB/보상DB/소개DB 분류 후 1·2·3차 배정</small>
+            </div>
+            <div class="journey-step">
+              <strong>S5~S6 상담/TM</strong>
+              <small>메뉴: 상담/TM, 미팅 인계</small>
+              <small>핵심: 건강/보험 체크, 수수료 고지, 미팅 일정 확정</small>
+            </div>
+            <div class="journey-step">
+              <strong>S7~S9 미팅/계약</strong>
+              <small>메뉴: 사전 분석, 미팅 실행, 계약 목록</small>
+              <small>핵심: 설계안, 현장 미팅, 계약/전자서명 확정</small>
+            </div>
+            <div class="journey-step">
+              <strong>S10~S13 청구/분석</strong>
+              <small>메뉴: 청구 접수, 서류 발급, 최종 분석</small>
+              <small>핵심: 청구DB 배정, OCR/발급, 보험사 접수</small>
+            </div>
+            <div class="journey-step">
+              <strong>S14~S17 지급/사후/Growth</strong>
+              <small>메뉴: 지급 확인, 사후 관리, 소개 관리</small>
+              <small>핵심: 지급 확인, 만족도 조사, 소개 전환</small>
+            </div>
+          </div>
+        </div>
+
+        <div class="ops-grid">
+          <div class="panel">
+            <h3>콜팀 운영 순서</h3>
+            <ul>
+              <li>접수 관리에서 S1~S3 유입/신청 건을 확인합니다.</li>
+              <li>DB 분류/배정에서 09:00, 13:00, 15:00 배정 루틴을 수행합니다.</li>
+              <li>상담/TM 화면에서 1차 TM, 2차 TM, 스크립트 체크리스트를 완료합니다.</li>
+              <li>미팅 인계에서 일정과 특이사항을 영업팀에 넘깁니다.</li>
+            </ul>
+          </div>
+          <div class="panel">
+            <h3>영업/청구/CS 연계</h3>
+            <ul>
+              <li>사전 분석에서 인수 가능 여부와 설계 방향을 정합니다.</li>
+              <li>미팅 실행/계약 체결 후 계약 목록과 청구 단계로 이어집니다.</li>
+              <li>청구 접수 → 서류 발급 → 최종 분석 후 지급 확인으로 이동합니다.</li>
+              <li>사후 관리와 소개 관리는 지급 이후 CS팀이 이어받습니다.</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2>5. 소개(R) 여정 운영 가이드</h2>
+        <div class="flow-grid">
+          <div class="flow-card">
+            <div class="flow-head">
+              <div>
+                <div class="route-badge">Journey R</div>
+                <h3>Same-owner 기반 소개 여정</h3>
+              </div>
+              <div class="tag skip">배정/TM 최소화</div>
+            </div>
+            <ul>
+              <li>광고비 없이 기존 고객의 추천으로 유입됩니다.</li>
+              <li>신규 고객이 소개 링크를 통해 진입하면 기존 담당자에게 바로 연결됩니다.</li>
+              <li>콜팀 단계가 축소되고 영업팀 사전 분석으로 곧바로 넘어갑니다.</li>
+            </ul>
+          </div>
+          <div class="flow-card">
+            <div class="flow-head">
+              <div>
+                <div class="route-badge">핵심 메뉴</div>
+                <h3>Growth Loop · 사전 분석 · 미팅</h3>
+              </div>
+              <div class="tag fast">R1~R14</div>
+            </div>
+            <ul>
+              <li><strong>소개 관리</strong>에서 추천인-피추천인 연결과 Same-owner 적용 여부를 확인합니다.</li>
+              <li><strong>사전 분석</strong>에서 바로 고객 상태를 검토하고 미팅을 잡습니다.</li>
+              <li><strong>사후관리</strong>에서 2차 소개와 가족 연동을 다시 발굴합니다.</li>
+            </ul>
+          </div>
+        </div>
+
+        <table class="ops-table">
+          <thead>
+            <tr>
+              <th>단계</th>
+              <th>어드민 처리</th>
+              <th>실무 포인트</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>R1~R2</td>
+              <td>소개 관리, 접수 관리</td>
+              <td>신규 고객이 소개 링크로 진입했는지, 기존 담당자 연결이 맞는지 확인</td>
+            </tr>
+            <tr>
+              <td>R3~R4</td>
+              <td>사전 분석</td>
+              <td>TM을 길게 하지 않고 미팅 가능 여부를 빨리 판단</td>
+            </tr>
+            <tr>
+              <td>R5~R11</td>
+              <td>미팅/계약, 청구/분석</td>
+              <td>S 여정과 동일한 계약/청구 플로우로 처리</td>
+            </tr>
+            <tr>
+              <td>R12~R14</td>
+              <td>사후 관리, Growth Loop</td>
+              <td>2차 소개, 가족 연동, 재유입 연결을 적극적으로 추적</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="section">
+        <h2>6. 간편청구(Q) 여정 운영 가이드</h2>
+        <div class="flow-grid">
+          <div class="flow-card">
+            <div class="flow-head">
+              <div>
+                <div class="route-badge">Journey Q</div>
+                <h3>콜 + 분석 + 청구 중심의 축약 여정</h3>
+              </div>
+              <div class="tag fast">2~3주</div>
+            </div>
+            <ul>
+              <li>기존 고객의 추가 청구 요청을 빠르게 처리하는 흐름입니다.</li>
+              <li>미팅보다 전화 기반 서류 확보와 정밀 분석이 더 중요합니다.</li>
+              <li>지급 이후에는 보장 공백 탐지와 소개 전환으로 이어집니다.</li>
+            </ul>
+          </div>
+          <div class="flow-card">
+            <div class="flow-head">
+              <div>
+                <div class="route-badge">핵심 메뉴</div>
+                <h3>간편청구, 청구/분석, 지급/사후</h3>
+              </div>
+              <div class="tag skip">미팅 축소</div>
+            </div>
+            <ul>
+              <li><strong>간편청구</strong>에서 접수와 초기 분기(Q1~Q2)를 처리합니다.</li>
+              <li><strong>청구/분석</strong>에서 서류 확보, 교차대조, 청구 확정을 진행합니다.</li>
+              <li><strong>지급/사후</strong>에서 지급 추적과 재청구/소개 가능성을 함께 봅니다.</li>
+            </ul>
+          </div>
+        </div>
+
+        <table class="ops-table">
+          <thead>
+            <tr>
+              <th>단계</th>
+              <th>어드민 처리</th>
+              <th>실무 포인트</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Q1~Q2</td>
+              <td>간편청구, 접수 관리</td>
+              <td>간편청구인지 3년환급 재진입인지 초기에 분기</td>
+            </tr>
+            <tr>
+              <td>Q3</td>
+              <td>간편청구, 상담/TM</td>
+              <td>서류 확보용 콜 스크립트와 연결률 KPI를 같이 관리</td>
+            </tr>
+            <tr>
+              <td>Q4~Q6</td>
+              <td>청구/분석</td>
+              <td>심평원/홈텍스/보험사 자료를 교차 분석하고 청구서 자동 생성</td>
+            </tr>
+            <tr>
+              <td>Q7~Q9</td>
+              <td>지급/사후, Growth Loop</td>
+              <td>지급 추적 후 보장 공백과 소개 기회까지 함께 발굴</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="section">
+        <h2>7. 팀간 인계와 체크리스트</h2>
+        <div class="ops-grid">
+          <div class="panel">
+            <h3>콜팀 → 영업팀</h3>
+            <ul>
+              <li>1차/2차 TM 녹취 첨부 여부</li>
+              <li>심평원 이력과 건강정보 체크 완료</li>
+              <li>수수료 안내, 특이사항, 미팅 일정 기록</li>
+              <li>미팅 인계 화면에서 승인 후 사전 분석 이동</li>
+            </ul>
+          </div>
+          <div class="panel">
+            <h3>영업팀 → 청구팀</h3>
+            <ul>
+              <li>계약 체결 결과, 전자서명, 계약 정보 등록 완료</li>
+              <li>청구대행약정, 신분증, 위임 관련 서류 준비 여부</li>
+              <li>보상DB/추가 분석 포인트 메모 포함</li>
+            </ul>
+          </div>
+          <div class="panel">
+            <h3>청구팀 → CS팀</h3>
+            <ul>
+              <li>지급 완료, 감액/부지급 여부, 고객 입금 확인</li>
+              <li>후속 만족도 조사 대상 여부 표시</li>
+              <li>소개/재유입 가능 고객 태깅</li>
+            </ul>
+          </div>
+          <div class="panel">
+            <h3>관리/준법 횡단 점검</h3>
+            <ul>
+              <li>준법/개인정보: 스크립트, 광고소재, 민원, Chinese Wall 점검</li>
+              <li>관리업무: 위촉/해촉, 배서, 수납, 개인정보 문서 보관 상태 확인</li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="footer-note">
+          운영 팁: 여정별 처리 속도를 높이려면 <strong>접수 관리 → 해당 단계 전용 화면 → 인계 화면</strong>
+          순서를 고정하는 것이 가장 효율적입니다. 특히 S 여정은 콜팀장의 배정 루틴, R 여정은 Same-owner,
+          Q 여정은 초기 분기와 교차 분석 정확도가 핵심입니다.
+        </div>
+      </section>
+
+      <section class="section">
+        <h2>8. 실무 투입용 SOP</h2>
+        <div class="panel">
+          <h3>S 여정 운영 SOP</h3>
+          <table class="ops-table">
+            <thead>
+              <tr>
+                <th>단계</th>
+                <th>메뉴 경로</th>
+                <th>담당</th>
+                <th>전산 처리</th>
+                <th>완료 기준</th>
+                <th>예외 처리</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>S1~S3</td>
+                <td>접수 관리</td>
+                <td>콜팀장 / 콜팀원</td>
+                <td>신규 접수 확인, 조회/신청 상태 확인, 조회 실패 건 분리</td>
+                <td>조회 완료율과 신청 완료 건이 확인됨</td>
+                <td>조회 실패 건은 별도 메모 후 재시도 대상 관리</td>
+              </tr>
+              <tr>
+                <td>S4</td>
+                <td>DB 분류/배정</td>
+                <td>콜팀장</td>
+                <td>가능DB/보상DB/소개DB 분류, 1차·2차·3차 배정</td>
+                <td>팀원별 20~30건 배정 완료</td>
+                <td>부적격 고객은 자동 필터링, 소개DB는 Same-owner 우선</td>
+              </tr>
+              <tr>
+                <td>S5</td>
+                <td>상담/TM → 1차 TM</td>
+                <td>콜팀원</td>
+                <td>보험/건강/중대질환/수수료 안내 체크, 녹취 첨부</td>
+                <td>스크립트 완료 + 고객 상태 저장</td>
+                <td>암/뇌/심장 이력 발견 시 진행불가 처리</td>
+              </tr>
+              <tr>
+                <td>S6</td>
+                <td>상담/TM → 2차 TM, 미팅 인계</td>
+                <td>콜팀원 / 콜팀장</td>
+                <td>미팅 일정 확정, 특이사항 기록, 인계 폼 작성</td>
+                <td>콜팀장 승인 후 S7 이동</td>
+                <td>부재/거절 건은 재접촉 또는 재배정 판단</td>
+              </tr>
+              <tr>
+                <td>S7~S9</td>
+                <td>사전 분석 → 미팅 실행 → 계약 목록</td>
+                <td>영업팀원 / 영업팀장</td>
+                <td>설계안 검토, 미팅 결과 기록, 계약 정보/전자서명 확인</td>
+                <td>계약 체결 완료 또는 불발 사유 정리</td>
+                <td>보상DB는 청구팀 인계, 인수불가 시 보강설계</td>
+              </tr>
+              <tr>
+                <td>S10~S13</td>
+                <td>청구 접수 → 서류 발급 → 최종 분석</td>
+                <td>청구팀원 / 청구팀장</td>
+                <td>청구 접수, OCR/발급, 최종 분석, 보험사 제출</td>
+                <td>보험사 접수번호 및 제출 상태 기록</td>
+                <td>발급 실패는 외근/외주로 우회 처리</td>
+              </tr>
+              <tr>
+                <td>S14~S17</td>
+                <td>지급 확인 → 사후 관리 → 소개 관리</td>
+                <td>청구팀 / CS팀</td>
+                <td>지급 결과 기록, 만족도 조사, 소개 푸시</td>
+                <td>지급 확인 및 사후관리 메모 완료</td>
+                <td>감액/부지급은 이의신청 검토, 고만족 고객은 소개 대상 태깅</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="panel" style="margin-top:16px">
+          <h3>R 여정 운영 SOP</h3>
+          <table class="ops-table">
+            <thead>
+              <tr>
+                <th>단계</th>
+                <th>메뉴 경로</th>
+                <th>담당</th>
+                <th>전산 처리</th>
+                <th>완료 기준</th>
+                <th>예외 처리</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>R1~R2</td>
+                <td>소개 관리, 접수 관리</td>
+                <td>CS팀 / 시스템</td>
+                <td>추천인-피추천인 연결, 소개 링크 유입 여부 확인</td>
+                <td>소개 건 생성 + 신규고객 진입 확인</td>
+                <td>링크 수락 지연 시 수동 콜백</td>
+              </tr>
+              <tr>
+                <td>R3~R4</td>
+                <td>사전 분석</td>
+                <td>영업팀원</td>
+                <td>Same-owner 배정 확인 후 심평원/설계 분석</td>
+                <td>TM 없이 바로 미팅 가능 상태</td>
+                <td>기존 담당자 퇴사 시 수동 재배정</td>
+              </tr>
+              <tr>
+                <td>R5~R11</td>
+                <td>미팅/계약, 청구/분석</td>
+                <td>영업팀 / 청구팀</td>
+                <td>S 여정과 동일하게 계약·청구 처리</td>
+                <td>지급 확인까지 완료</td>
+                <td>불발 시 소개 상태를 declined로 정리</td>
+              </tr>
+              <tr>
+                <td>R12~R14</td>
+                <td>사후 관리, Growth Loop</td>
+                <td>CS팀</td>
+                <td>사후관리 콜, 2차 소개, 재유입 추적</td>
+                <td>추가 소개 또는 가족 연동 생성</td>
+                <td>재유입 고객은 S4 자동배정 또는 수동배정 필요 표시</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="panel" style="margin-top:16px">
+          <h3>Q 여정 운영 SOP</h3>
+          <table class="ops-table">
+            <thead>
+              <tr>
+                <th>단계</th>
+                <th>메뉴 경로</th>
+                <th>담당</th>
+                <th>전산 처리</th>
+                <th>완료 기준</th>
+                <th>예외 처리</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Q1~Q2</td>
+                <td>간편청구, 접수 관리</td>
+                <td>청구팀 / 시스템</td>
+                <td>간편청구 신청 접수, Q vs S 분기</td>
+                <td>적절한 여정으로 배정</td>
+                <td>3년환급 재진입이면 S 여정으로 전환</td>
+              </tr>
+              <tr>
+                <td>Q3</td>
+                <td>간편청구, 상담/TM</td>
+                <td>청구팀원</td>
+                <td>서류 확보용 콜, 필요 서류 상태 기록</td>
+                <td>청구 가능 서류가 확보됨</td>
+                <td>서류 미비 시 추가 제출 요청</td>
+              </tr>
+              <tr>
+                <td>Q4~Q6</td>
+                <td>청구/분석</td>
+                <td>청구팀원 / 팀장</td>
+                <td>교차대조 분석, 미청구건 발굴, 청구서 자동생성, 보험사 접수</td>
+                <td>접수번호와 청구 확정 상태 기록</td>
+                <td>감액/부지급 예상 건은 재청구 메모</td>
+              </tr>
+              <tr>
+                <td>Q7~Q9</td>
+                <td>지급/사후, Growth Loop</td>
+                <td>청구팀 / CS팀</td>
+                <td>지급 추적, 결과 안내, 보장 공백 탐지, 소개 제안</td>
+                <td>지급 종료 + 리텐션 액션 수행</td>
+                <td>보장 공백 발견 시 S 여정 전환 제안</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="footer-note">
+          위 SOP는 “어떤 화면을 열어야 하는지”보다 한 단계 더 나아가,
+          <strong>입력해야 할 것</strong>, <strong>넘겨야 할 것</strong>, <strong>완료 기준</strong>까지
+          포함하도록 정리했습니다. 실제 팀 온보딩 시에는 이 표를 역할별 교육 체크리스트로 그대로 쓸 수 있습니다.
+        </div>
+      </section>
+
+      <section class="section">
+        <h2>9. 역할별 일과 기준</h2>
+        <table class="ops-table">
+          <thead>
+            <tr>
+              <th>역할</th>
+              <th>핵심 시작 화면</th>
+              <th>일과 핵심 루틴</th>
+              <th>마감 체크</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>콜팀장</td>
+              <td>DB 분류/배정, 일일 보고서</td>
+              <td>09:00 현황 확인 → 10/13/15시 배정 → 16:00 품질 점검</td>
+              <td>총 배정 수, 잔여 DB, 상담 품질 샘플 확인</td>
+            </tr>
+            <tr>
+              <td>콜팀원</td>
+              <td>상담/TM</td>
+              <td>1차 TM → 2차 TM → 미팅 인계</td>
+              <td>녹취 첨부, 특이사항, 인계 폼 저장</td>
+            </tr>
+            <tr>
+              <td>영업팀</td>
+              <td>사전 분석, 미팅 실행, 계약 목록</td>
+              <td>사전 분석 → 미팅 준비 → 미팅 결과 기록 → 계약 정리</td>
+              <td>전자서명, 계약정보, 불발사유 정리</td>
+            </tr>
+            <tr>
+              <td>청구팀</td>
+              <td>청구 접수, 서류 발급, 최종 분석</td>
+              <td>청구 접수 → OCR/발급 → 보험사 접수 → 지급 추적</td>
+              <td>접수번호, 발급상태, 미지급 분석 결과 확인</td>
+            </tr>
+            <tr>
+              <td>CS팀</td>
+              <td>사후 관리, 소개 관리</td>
+              <td>만족도 조사 → 소개 푸시 → 재유입/가족 연동 추적</td>
+              <td>고객 만족도, 소개 전환, 재유입 대상 태깅</td>
+            </tr>
+            <tr>
+              <td>관리/준법</td>
+              <td>준법/개인정보, 관리업무</td>
+              <td>준법 점검, 민원/교육, 위촉·수납·개인정보 문서 관리</td>
+              <td>리스크 항목, 만료 문서, 내부통제 보완 건 확인</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="section">
+        <h2>10. 실무 활용 팁</h2>
+        <table class="ops-table">
+          <thead>
+            <tr>
+              <th>상황</th>
+              <th>실무 팁</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>리스트가 비어 보일 때</td>
+              <td>상단 기간 필터가 `이번 1달`로 고정되어 있으면 값이 적게 보일 수 있습니다. 교육 시에는 `전체` 또는 `최근 30일` 기준으로 먼저 설명하세요.</td>
+            </tr>
+            <tr>
+              <td>담당자 관점 교육</td>
+              <td>고객 여정 설명만 하지 말고 “내가 오늘 처음 열 화면 3개”를 역할별로 먼저 보여주는 것이 훨씬 빠릅니다.</td>
+            </tr>
+            <tr>
+              <td>신입 온보딩</td>
+              <td>이 문서의 SOP 표와 일과 기준 표를 체크리스트로 사용하고, 대표 사례 4개를 같이 설명하면 이해가 빠릅니다.</td>
+            </tr>
+            <tr>
+              <td>공유 배포</td>
+              <td>HTML 그대로 공유한 뒤, 브라우저 인쇄로 PDF 저장하면 팀 교육자료로 바로 활용할 수 있습니다.</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="section">
+        <h2>11. 공유 방법</h2>
+        <table class="ops-table">
+          <thead>
+            <tr>
+              <th>방법</th>
+              <th>설명</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>브라우저 공유</td>
+              <td>이 HTML 파일을 그대로 열어 링크/파일로 전달</td>
+            </tr>
+            <tr>
+              <td>PDF 저장</td>
+              <td>브라우저 인쇄 → PDF 저장으로 교육자료/배포자료로 전환</td>
+            </tr>
+            <tr>
+              <td>슬라이드 재가공</td>
+              <td>이 문서의 구조와 캡처 이미지를 기반으로 PPT 제작 가능</td>
+            </tr>
+          </tbody>
+        </table>
+        <p class="print-note">
+          파일 경로: <strong>docs/admin-journey-guide.html</strong><br />
+          이미지 자산: <strong>docs/assets/admin-journey-guide/</strong>
+        </p>
+      </section>
+    </main>
+  </body>
+</html>

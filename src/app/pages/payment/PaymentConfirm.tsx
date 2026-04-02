@@ -13,6 +13,7 @@ import {
   Download,
 } from 'lucide-react';
 import clsx from 'clsx';
+import { toast } from 'sonner';
 
 // --- Mock Data ---
 const PAYMENT_STATS = {
@@ -244,7 +245,11 @@ export function PaymentConfirm() {
             S14 · 보험금 지급 상태 확인 및 고객 안내
           </p>
         </div>
-        <button className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+        <button
+          type="button"
+          onClick={() => toast('엑셀 다운로드는 준비 중입니다')}
+          className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+        >
           <Download className="h-4 w-4" />
           엑셀 다운로드
         </button>

@@ -1,77 +1,61 @@
-import React, { useState, useMemo } from 'react';
-import { FileText, Clipboard, Check, Activity, Shield, Code, ChevronDown, ChevronUp } from 'lucide-react';
-import clsx from 'clsx';
+import React, { useMemo, useState } from 'react';
+import { ChevronDown, ChevronUp, Clipboard, FileText, Shield } from 'lucide-react';
+import { toast } from 'sonner';
 import { ScriptTopicItem, type ReferenceData } from './ScriptTopicItem';
 import {
-  HIRA_SCRIPT_TOPICS,
   COVERAGE_SCRIPT_TOPICS,
-  MOCK_HIRA_DISEASE_RECORDS,
-  HIRA_TOPIC_REFERENCES,
   COVERAGE_TOPIC_REFERENCES,
+  HIRA_SCRIPT_TOPICS,
+  HIRA_TOPIC_REFERENCES,
+  MOCK_HIRA_DISEASE_RECORDS,
 } from './mockScriptTemplates';
 import {
   MOCK_CONTRACTS,
   MOCK_COVERAGE_ITEMS,
   MOCK_GAP_FLAGS,
 } from './mockInsuranceAnalysis';
-import { toast } from 'sonner';
 
 interface TopicState {
   isActive: boolean;
-  templateId: string | null;
   text: string;
 }
 
-function formatReferenceForScript(referenceData?: ReferenceData): string {
-  if (!referenceData) return '';
+function formatReferenceForScript(referenceData?: ReferenceData) {
+  if (!referenceData || referenceData.type !== 'coverage') return '';
 
   const lines: string[] = [`참조 요약: ${referenceData.summary}`];
 
-  if (referenceData.type === 'hira' && referenceData.hiraRecords?.length) {
-    referenceData.hiraRecords.slice(0, 3).forEach((record) => {
+  if (referenceData.coverageItems?.length) {
+    referenceData.coverageItems.slice(0, 3).forEach((item) => {
       lines.push(
-        `- ${record.date} / ${record.hospital} / ${record.diagnosis}(${record.diseaseCode}) / ${record.treatmentType} / ${record.details}`
+        `- ${item.insurer} / ${item.coverageName} / ${item.amount >= 10000 ? `${(item.amount / 10000).toFixed(0)}억` : `${item.amount}만`}원 / ${
+          item.isRenewal ? '갱신형' : '비갱신형'
+        }`,
       );
     });
-    if (referenceData.hiraRecords.length > 3) {
-      lines.push(`- 외 ${referenceData.hiraRecords.length - 3}건 추가 진료내역`);
-    }
   }
 
-  if (referenceData.type === 'coverage') {
-    if (referenceData.coverageItems?.length) {
-      referenceData.coverageItems.slice(0, 3).forEach((item) => {
-        lines.push(
-          `- ${item.insurer} / ${item.coverageName} / ${item.amount >= 10000 ? `${(item.amount / 10000).toFixed(0)}억` : `${item.amount}만`}원 / ${item.isRenewal ? '갱신형' : '비갱신형'}`
-        );
-      });
-      if (referenceData.coverageItems.length > 3) {
-        lines.push(`- 외 ${referenceData.coverageItems.length - 3}개 담보 추가`);
-      }
-    }
-    if (referenceData.gapDetail) {
-      lines.push(`- 갭 분석: ${referenceData.gapDetail}`);
-    }
-    if (referenceData.gapRecommendation) {
-      lines.push(`- 제안 포인트: ${referenceData.gapRecommendation}`);
-    }
+  if (referenceData.gapDetail) {
+    lines.push(`- 갭 분석: ${referenceData.gapDetail}`);
+  }
+
+  if (referenceData.gapRecommendation) {
+    lines.push(`- 제안 포인트: ${referenceData.gapRecommendation}`);
   }
 
   return lines.join('\n');
 }
 
-function composeTopicBlock(label: string, state: TopicState | undefined, defaultText: string, referenceData?: ReferenceData): string | null {
+function composeCoverageBlock(label: string, state: TopicState | undefined, defaultText: string, referenceData?: ReferenceData) {
   if (!state?.isActive) return null;
 
   const referenceText = formatReferenceForScript(referenceData);
   const scriptText = state.text.trim() || defaultText.trim();
   const body = [referenceText, scriptText].filter(Boolean).join('\n\n');
 
-  if (!body) return null;
-  return `【${label}】\n${body}`;
+  return body ? `【${label}】\n${body}` : null;
 }
 
-// 심평원 토픽 → 참조 데이터 빌드
 function buildHiraReference(topicId: string): ReferenceData | undefined {
   const ref = HIRA_TOPIC_REFERENCES[topicId];
   if (!ref || ref.records.length === 0) return undefined;
@@ -82,26 +66,21 @@ function buildHiraReference(topicId: string): ReferenceData | undefined {
   };
 }
 
-// 보장분석 토픽 → 참조 데이터 빌드
 function buildCoverageReference(topicId: string): ReferenceData | undefined {
   const ref = COVERAGE_TOPIC_REFERENCES[topicId];
   if (!ref) return undefined;
 
-  const gapFlag = MOCK_GAP_FLAGS.find(f => f.id === ref.gapFlagId);
-
-  // 관련 담보 아이템 조회
-  const coverageItems = MOCK_COVERAGE_ITEMS
-    .filter(item => ref.relatedCoverageNames.includes(item.coverageName))
-    .map(item => {
-      const contract = MOCK_CONTRACTS.find(c => c.id === item.contractId);
-      return {
-        coverageName: item.coverageName,
-        insurer: contract?.insurer || '',
-        amount: item.amount,
-        category: item.category,
-        isRenewal: item.isRenewal,
-      };
-    });
+  const gapFlag = MOCK_GAP_FLAGS.find((flag) => flag.id === ref.gapFlagId);
+  const coverageItems = MOCK_COVERAGE_ITEMS.filter((item) => ref.relatedCoverageNames.includes(item.coverageName)).map((item) => {
+    const contract = MOCK_CONTRACTS.find((value) => value.id === item.contractId);
+    return {
+      coverageName: item.coverageName,
+      insurer: contract?.insurer || '',
+      amount: item.amount,
+      category: item.category,
+      isRenewal: item.isRenewal,
+    };
+  });
 
   return {
     type: 'coverage',
@@ -114,285 +93,211 @@ function buildCoverageReference(topicId: string): ReferenceData | undefined {
   };
 }
 
-// 상병코드 → 관련 심평원 레코드 빌드
 function buildDiseaseReference(code: string, name: string, visitCount: number, lastVisitDate: string): ReferenceData {
-  // 모든 토픽 레퍼런스에서 해당 상병코드가 포함된 진료내역 수집
   const allRecords = Object.values(HIRA_TOPIC_REFERENCES)
-    .flatMap(t => t.records)
-    .filter(r => r.diseaseCode === code);
+    .flatMap((topic) => topic.records)
+    .filter((record) => record.diseaseCode === code);
 
   return {
     type: 'hira',
     summary: `${name}(${code}) / 총 ${visitCount}회 진료 / 최종: ${lastVisitDate}`,
-    hiraRecords: allRecords.length > 0 ? allRecords : [
-      {
-        date: lastVisitDate,
-        hospital: '-',
-        department: '-',
-        diagnosis: name,
-        diseaseCode: code,
-        treatmentType: '외래',
-        details: `총 ${visitCount}회 진료`,
-      },
-    ],
+    hiraRecords:
+      allRecords.length > 0
+        ? allRecords
+        : [
+            {
+              date: lastVisitDate,
+              hospital: '-',
+              department: '-',
+              diagnosis: name,
+              diseaseCode: code,
+              treatmentType: '외래',
+              details: `총 ${visitCount}회 진료`,
+            },
+          ],
   };
 }
 
 export function SalesScriptTab() {
-  // 심평원 기반 토픽 상태
-  const [hiraStates, setHiraStates] = useState<Record<string, TopicState>>(() => {
-    const initial: Record<string, TopicState> = {};
-    HIRA_SCRIPT_TOPICS.forEach(t => {
-      initial[t.id] = { isActive: false, templateId: null, text: '' };
-    });
-    return initial;
-  });
-
-  // 보장분석 기반 토픽 상태
   const [coverageStates, setCoverageStates] = useState<Record<string, TopicState>>(() => {
     const initial: Record<string, TopicState> = {};
-    COVERAGE_SCRIPT_TOPICS.forEach(t => {
-      initial[t.id] = { isActive: false, templateId: null, text: '' };
+    COVERAGE_SCRIPT_TOPICS.forEach((topic) => {
+      initial[topic.id] = { isActive: false, text: '' };
     });
     return initial;
   });
-
-  // 상병코드별 스크립트 상태
-  const [diseaseStates, setDiseaseStates] = useState<Record<string, TopicState>>(() => {
-    const initial: Record<string, TopicState> = {};
-    MOCK_HIRA_DISEASE_RECORDS.forEach(d => {
-      initial[d.code] = { isActive: false, templateId: null, text: '' };
-    });
-    return initial;
-  });
-
-  // 섹션 접기/펼치기
   const [expandedSections, setExpandedSections] = useState({
     hira: true,
-    coverage: true,
     disease: true,
+    coverage: true,
     preview: true,
   });
+  const [copied, setCopied] = useState(false);
 
-  const toggleSection = (key: keyof typeof expandedSections) => {
-    setExpandedSections(prev => ({ ...prev, [key]: !prev[key] }));
-  };
-
-  // 참조 데이터 캐시 (useMemo)
   const hiraReferences = useMemo(() => {
     const refs: Record<string, ReferenceData | undefined> = {};
-    HIRA_SCRIPT_TOPICS.forEach(t => {
-      refs[t.id] = buildHiraReference(t.id);
-    });
-    return refs;
-  }, []);
-
-  const coverageReferences = useMemo(() => {
-    const refs: Record<string, ReferenceData | undefined> = {};
-    COVERAGE_SCRIPT_TOPICS.forEach(t => {
-      refs[t.id] = buildCoverageReference(t.id);
+    HIRA_SCRIPT_TOPICS.forEach((topic) => {
+      refs[topic.id] = buildHiraReference(topic.id);
     });
     return refs;
   }, []);
 
   const diseaseReferences = useMemo(() => {
     const refs: Record<string, ReferenceData> = {};
-    MOCK_HIRA_DISEASE_RECORDS.forEach(d => {
-      refs[d.code] = buildDiseaseReference(d.code, d.name, d.visitCount, d.lastVisitDate);
+    MOCK_HIRA_DISEASE_RECORDS.forEach((record) => {
+      refs[record.code] = buildDiseaseReference(record.code, record.name, record.visitCount, record.lastVisitDate);
     });
     return refs;
   }, []);
 
-  // 최종 스크립트 합산
+  const coverageReferences = useMemo(() => {
+    const refs: Record<string, ReferenceData | undefined> = {};
+    COVERAGE_SCRIPT_TOPICS.forEach((topic) => {
+      refs[topic.id] = buildCoverageReference(topic.id);
+    });
+    return refs;
+  }, []);
+
   const composedScript = useMemo(() => {
     const parts: string[] = [];
 
-    HIRA_SCRIPT_TOPICS.forEach(t => {
-      const state = hiraStates[t.id];
-      const block = composeTopicBlock(t.label, state, t.defaultText, hiraReferences[t.id]);
-      if (block) parts.push(block);
-    });
-
-    MOCK_HIRA_DISEASE_RECORDS.forEach(d => {
-      const state = diseaseStates[d.code];
-      const block = composeTopicBlock(`상병코드: ${d.code} - ${d.name}`, state, d.scriptTemplate, diseaseReferences[d.code]);
-      if (block) parts.push(block);
-    });
-
-    COVERAGE_SCRIPT_TOPICS.forEach(t => {
-      const state = coverageStates[t.id];
-      const block = composeTopicBlock(t.label, state, t.defaultText, coverageReferences[t.id]);
+    COVERAGE_SCRIPT_TOPICS.forEach((topic) => {
+      const block = composeCoverageBlock(topic.label, coverageStates[topic.id], topic.defaultText, coverageReferences[topic.id]);
       if (block) parts.push(block);
     });
 
     return parts.join('\n\n---\n\n');
-  }, [hiraStates, coverageStates, diseaseStates, hiraReferences, coverageReferences, diseaseReferences]);
+  }, [coverageReferences, coverageStates]);
 
-  const [copied, setCopied] = useState(false);
+  const activeCount = Object.values(coverageStates).filter((state) => state.isActive).length;
+
   const handleCopyAll = () => {
     navigator.clipboard.writeText(composedScript);
     setCopied(true);
-    toast.success('전체 스크립트가 복사되었습니다.');
-    setTimeout(() => setCopied(false), 2000);
+    toast.success('보장분석 스크립트가 복사되었습니다.');
+    window.setTimeout(() => setCopied(false), 2000);
   };
-
-  const handleSave = () => {
-    toast.success('스크립트가 저장되었습니다.');
-  };
-
-  const activeCount = Object.values(hiraStates).filter(s => s.isActive).length
-    + Object.values(coverageStates).filter(s => s.isActive).length
-    + Object.values(diseaseStates).filter(s => s.isActive).length;
 
   return (
     <div className="space-y-6">
-      {/* 요약 헤더 */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 flex items-center justify-between">
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-2">
             <FileText size={18} className="text-blue-600" />
-            <span className="font-bold text-sm text-slate-800">영업 스크립트 빌더</span>
+            <span className="font-bold text-sm text-slate-800">영업 스크립트</span>
           </div>
           <span className="text-xs text-slate-400">|</span>
           <span className="text-xs text-slate-500">
-            활성 토픽 <span className="font-bold text-blue-600">{activeCount}</span>개
+            보장분석 활성 토픽 <span className="font-bold text-blue-600">{activeCount}</span>개
           </span>
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={handleSave}
-            className="px-3 py-1.5 text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg transition-colors"
-          >
-            저장
-          </button>
         </div>
       </div>
 
-      {/* 섹션 A: 심평원 기반 */}
       <SectionHeader
-        icon={<Activity size={16} />}
+        icon={<FileText size={16} />}
         title="A. 심평원 진료내역 기반"
         subtitle={`${HIRA_SCRIPT_TOPICS.length}개 토픽`}
         expanded={expandedSections.hira}
-        onToggle={() => toggleSection('hira')}
-        color="indigo"
+        onToggle={() => setExpandedSections((prev) => ({ ...prev, hira: !prev.hira }))}
       />
       {expandedSections.hira && (
         <div className="space-y-2">
-          {HIRA_SCRIPT_TOPICS.map(topic => (
+          {HIRA_SCRIPT_TOPICS.map((topic) => (
             <ScriptTopicItem
               key={topic.id}
               label={topic.label}
-              source={topic.source}
-              isActive={hiraStates[topic.id]?.isActive ?? false}
-              defaultExpanded={!!hiraReferences[topic.id]}
-              text={hiraStates[topic.id]?.text ?? ''}
+              source="hira"
+              isActive
+              defaultExpanded
+              text=""
               defaultText={topic.defaultText}
-              savedVersions={topic.savedVersions}
+              savedVersions={[]}
               referenceData={hiraReferences[topic.id]}
-              onToggle={() => setHiraStates(prev => ({
-                ...prev,
-                [topic.id]: { ...prev[topic.id], isActive: !prev[topic.id].isActive }
-              }))}
-              onChange={(text) => setHiraStates(prev => ({
-                ...prev,
-                [topic.id]: { ...prev[topic.id], text }
-              }))}
-              onLoadTemplate={(text) => setHiraStates(prev => ({
-                ...prev,
-                [topic.id]: { ...prev[topic.id], text, isActive: true }
-              }))}
+              onToggle={() => {}}
+              onChange={() => {}}
+              onLoadTemplate={() => {}}
             />
           ))}
         </div>
       )}
 
-      {/* 상병코드별 스크립트 */}
       <SectionHeader
-        icon={<Code size={16} />}
-        title="심평원 상병코드별 스크립트"
+        icon={<FileText size={16} />}
+        title="심평원 상병코드별 보기"
         subtitle={`${MOCK_HIRA_DISEASE_RECORDS.length}개 상병코드`}
         expanded={expandedSections.disease}
-        onToggle={() => toggleSection('disease')}
-        color="violet"
+        onToggle={() => setExpandedSections((prev) => ({ ...prev, disease: !prev.disease }))}
       />
       {expandedSections.disease && (
         <div className="space-y-2">
-          {MOCK_HIRA_DISEASE_RECORDS.map(record => (
+          {MOCK_HIRA_DISEASE_RECORDS.map((record) => (
             <ScriptTopicItem
               key={record.code}
               label={`${record.code} - ${record.name} (${record.visitCount}회)`}
               source="hira"
-              isActive={diseaseStates[record.code]?.isActive ?? false}
-              defaultExpanded={!!diseaseReferences[record.code]}
-              text={diseaseStates[record.code]?.text ?? ''}
+              isActive
+              defaultExpanded
+              text=""
               defaultText={record.scriptTemplate}
               savedVersions={[]}
               referenceData={diseaseReferences[record.code]}
-              onToggle={() => setDiseaseStates(prev => ({
-                ...prev,
-                [record.code]: { ...prev[record.code], isActive: !prev[record.code].isActive }
-              }))}
-              onChange={(text) => setDiseaseStates(prev => ({
-                ...prev,
-                [record.code]: { ...prev[record.code], text }
-              }))}
-              onLoadTemplate={(text) => setDiseaseStates(prev => ({
-                ...prev,
-                [record.code]: { ...prev[record.code], text, isActive: true }
-              }))}
+              onToggle={() => {}}
+              onChange={() => {}}
+              onLoadTemplate={() => {}}
             />
           ))}
         </div>
       )}
 
-      {/* 섹션 B: 보장분석 기반 */}
       <SectionHeader
         icon={<Shield size={16} />}
         title="B. 보장분석 기반"
         subtitle={`${COVERAGE_SCRIPT_TOPICS.length}개 토픽`}
         expanded={expandedSections.coverage}
-        onToggle={() => toggleSection('coverage')}
-        color="amber"
+        onToggle={() => setExpandedSections((prev) => ({ ...prev, coverage: !prev.coverage }))}
       />
       {expandedSections.coverage && (
         <div className="space-y-2">
-          {COVERAGE_SCRIPT_TOPICS.map(topic => (
+          {COVERAGE_SCRIPT_TOPICS.map((topic) => (
             <ScriptTopicItem
               key={topic.id}
               label={topic.label}
-              source={topic.source}
+              source="coverage"
               isActive={coverageStates[topic.id]?.isActive ?? false}
-              defaultExpanded={!!coverageReferences[topic.id]}
+              defaultExpanded={Boolean(coverageReferences[topic.id])}
               text={coverageStates[topic.id]?.text ?? ''}
               defaultText={topic.defaultText}
               savedVersions={topic.savedVersions}
               referenceData={coverageReferences[topic.id]}
-              onToggle={() => setCoverageStates(prev => ({
-                ...prev,
-                [topic.id]: { ...prev[topic.id], isActive: !prev[topic.id].isActive }
-              }))}
-              onChange={(text) => setCoverageStates(prev => ({
-                ...prev,
-                [topic.id]: { ...prev[topic.id], text }
-              }))}
-              onLoadTemplate={(text) => setCoverageStates(prev => ({
-                ...prev,
-                [topic.id]: { ...prev[topic.id], text, isActive: true }
-              }))}
+              onToggle={() =>
+                setCoverageStates((prev) => ({
+                  ...prev,
+                  [topic.id]: { ...prev[topic.id], isActive: !prev[topic.id].isActive },
+                }))
+              }
+              onChange={(text) =>
+                setCoverageStates((prev) => ({
+                  ...prev,
+                  [topic.id]: { ...prev[topic.id], text },
+                }))
+              }
+              onLoadTemplate={(text) =>
+                setCoverageStates((prev) => ({
+                  ...prev,
+                  [topic.id]: { ...prev[topic.id], text, isActive: true },
+                }))
+              }
             />
           ))}
         </div>
       )}
 
-      {/* 최종 스크립트 미리보기 */}
       <SectionHeader
-        icon={<FileText size={16} />}
-        title="최종 스크립트 미리보기"
+        icon={<Clipboard size={16} />}
+        title="보장분석 스크립트 미리보기"
         subtitle={composedScript ? `${composedScript.length}자` : '작성된 스크립트 없음'}
         expanded={expandedSections.preview}
-        onToggle={() => toggleSection('preview')}
-        color="blue"
+        onToggle={() => setExpandedSections((prev) => ({ ...prev, preview: !prev.preview }))}
       />
       {expandedSections.preview && (
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
@@ -403,20 +308,18 @@ export function SalesScriptTab() {
                   onClick={handleCopyAll}
                   className="px-3 py-1.5 text-xs font-bold bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-1"
                 >
-                  {copied ? <Check size={12} /> : <Clipboard size={12} />}
+                  <Clipboard size={12} />
                   {copied ? '복사됨' : '전체 복사'}
                 </button>
               </div>
               <div className="p-5">
-                <pre className="text-sm text-slate-700 whitespace-pre-wrap leading-relaxed font-sans">
-                  {composedScript}
-                </pre>
+                <pre className="text-sm text-slate-700 whitespace-pre-wrap leading-relaxed font-sans">{composedScript}</pre>
               </div>
             </>
           ) : (
             <div className="p-8 text-center">
               <FileText size={32} className="mx-auto text-slate-200 mb-3" />
-              <p className="text-sm text-slate-400">위 토픽을 활성화하고 스크립트를 작성하면 여기에 합산됩니다.</p>
+              <p className="text-sm text-slate-400">보장분석 토픽을 활성화하면 여기에 스크립트가 합산됩니다.</p>
             </div>
           )}
         </div>
@@ -431,29 +334,20 @@ function SectionHeader({
   subtitle,
   expanded,
   onToggle,
-  color,
 }: {
   icon: React.ReactNode;
   title: string;
   subtitle: string;
   expanded: boolean;
   onToggle: () => void;
-  color: string;
 }) {
-  const colorMap: Record<string, string> = {
-    indigo: 'text-indigo-600',
-    amber: 'text-amber-600',
-    blue: 'text-blue-600',
-    violet: 'text-violet-600',
-  };
-
   return (
     <button
       onClick={onToggle}
       className="w-full flex items-center justify-between bg-white rounded-lg border border-slate-200 px-4 py-3 hover:bg-slate-50 transition-colors"
     >
       <div className="flex items-center gap-2">
-        <span className={colorMap[color] || 'text-slate-600'}>{icon}</span>
+        <span className="text-slate-600">{icon}</span>
         <span className="font-bold text-sm text-slate-800">{title}</span>
         <span className="text-xs text-slate-400 ml-1">{subtitle}</span>
       </div>

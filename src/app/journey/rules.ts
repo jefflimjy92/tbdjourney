@@ -46,14 +46,6 @@ export const JOURNEY_RULES: RequirementRule[] = [
     errorMessage: '기본 동의 Pack이 완료되어야 다음 단계로 진행할 수 있습니다.',
   },
   {
-    id: 'consultation.hira-review',
-    appliesTo: { stage: ['consultation', 'meeting'], journeyType: ['refund', 'family'] },
-    severity: 'block',
-    kind: 'integration',
-    predicate: '심평원 조회와 검토자 정보가 있어야 한다.',
-    errorMessage: '심평원 조회/검토가 완료되어야 합니다.',
-  },
-  {
     id: 'meeting.contract-pack',
     appliesTo: { stage: ['meeting', 'handoff'] },
     severity: 'block',
@@ -67,7 +59,7 @@ const terminalConsultationStatuses = new Set(['cancel', 'impossible', '1st-cance
 const consultationHandoffStatuses = new Set(['meeting-handover']);
 const meetingDocumentResultStatuses = new Set(['contract-completed']);
 const meetingFollowupStatuses = new Set(['followup-2nd-meeting']);
-const meetingClosedStatuses = new Set(['contract-failed', 'on-site-impossible', 'meeting-cancelled', 'no-show', 'uw-rejected', 'withdrawn']);
+const meetingClosedStatuses = new Set(['contract-failed', 'post-meeting-impossible', 'pre-meeting-cancel', 'pre-meeting-impossible', 'final-absent', 'withdrawn']);
 
 function createAlert(
   id: string,
@@ -240,11 +232,6 @@ function collectDocumentAlerts(journey: RequestJourney, alerts: RequirementAlert
 }
 
 function collectIntegrationAlerts(journey: RequestJourney, alerts: RequirementAlert[]) {
-  const hiraTask = journey.integrationTasks.find((task) => task.provider === 'hira');
-  if ((journey.journeyType === 'refund' || journey.journeyType === 'family') && (!hiraTask || hiraTask.state !== 'verified' || !isFilled(journey.consultationDraft.hiraReviewedBy))) {
-    alerts.push(createAlert('integration-hira', '심평원 검토', '심평원 조회와 검토자 기록이 완료되어야 합니다.', 'block', 'integration', 'consultation', journey.consultationDraft.selectedStatus));
-  }
-
   const scriptTask = journey.integrationTasks.find((task) => task.provider === 'script');
   if ((journey.consultationDraft.scriptExecuted || journey.meetingDraft.recordingStarted) && (!scriptTask || scriptTask.state === 'failed')) {
     alerts.push(createAlert('integration-script', '스크립트 QA', '스크립트 QA 상태를 다시 확인해주세요.', 'warn', 'integration', 'consultation'));
@@ -268,8 +255,6 @@ function collectConsultationAlerts(journey: RequestJourney, alerts: RequirementA
     validateFactCheck(toConsultationFormData(draft)).errors.forEach((error) => {
       alerts.push(createAlert(`consult-${error.field}`, error.field, error.message, 'block', 'field', 'consultation', status));
     });
-    if (!isFilled(draft.hiraReviewedBy)) alerts.push(createAlert('consult-hira-reviewer', '심평원 검토자', '1차 상담 완료 전 심평원 검토자를 기록해야 합니다.', 'block', 'field', 'consultation', status));
-    if (!isFilled(draft.hiraReviewedAt)) alerts.push(createAlert('consult-hira-reviewed-at', '심평원 검토 시각', '1차 상담 완료 전 심평원 검토 시각이 필요합니다.', 'block', 'schedule', 'consultation', status));
     if (!isFilled(draft.customerReaction)) alerts.push(createAlert('consult-reaction', '고객 반응 요약', '1차 상담 완료 전 고객 반응 요약이 필요합니다.', 'block', 'note', 'consultation', status));
     if (!isFilled(draft.customerSummary)) alerts.push(createAlert('consult-summary', '상담 요약', '1차 상담 완료 전 상담 요약이 필요합니다.', 'block', 'note', 'consultation', status));
   }
@@ -331,7 +316,7 @@ function collectConsultationAlerts(journey: RequestJourney, alerts: RequirementA
 export function isStepComplete(step: MeetingStepNumber, draft: MeetingDraft): boolean {
   switch (step) {
     case 1:
-      return isFilled(draft.meetingTime) && isFilled(draft.meetingLocation) && draft.meetingConfirmed;
+      return isFilled(draft.meetingTime) && draft.meetingConfirmed;
     case 2:
       return draft.analysisFileUploaded;
     case 3:
@@ -373,7 +358,7 @@ export function isPostMeetingComplete(draft: MeetingDraft): boolean {
   const contractReady = draft.selectedDetail !== 'contract-completed' || draft.contractData.length > 0;
   const claimDocumentsReady =
     !draft.claimTransferRequested ||
-    (draft.postThreeDocSubmitted && draft.onSitePolicyCollected && draft.onSitePaymentStatementCollected);
+    (draft.policyDocStatus === 'received' && draft.paymentDocStatus === 'received');
 
   return hasResultSummary && hasSelectedStatus && contractReady && claimDocumentsReady;
 }
@@ -406,13 +391,13 @@ function collectMeetingAlerts(journey: RequestJourney, alerts: RequirementAlert[
   // ━━━ 상태별 필수값 ━━━
   const followupSubtype = draft.selectedSubDetail;
 
-  if (meetingFollowupStatuses.has(detail) || (detail === 'followup-in-progress' && followupSubtype === '2차 미팅 예정')) {
+  if (meetingFollowupStatuses.has(detail) || (detail === 'prospect' && followupSubtype === '2차 미팅 예정')) {
     if (!isFilled(draft.followupDate)) alerts.push(createAlert('meeting-followup-date', '다음 미팅 일시', '2차 미팅은 다음 일정이 필요합니다.', 'block', 'schedule', 'meeting', detail));
     if (!isFilled(draft.followupLocation)) alerts.push(createAlert('meeting-followup-location', '다음 미팅 장소', '2차 미팅은 장소가 필요합니다.', 'block', 'schedule', 'meeting', detail));
     if (!isFilled(draft.followupPurpose)) alerts.push(createAlert('meeting-followup-purpose', '다음 미팅 목적', '2차 미팅은 목적이 필요합니다.', 'block', 'note', 'meeting', detail));
   }
 
-  if (detail === 'followup-in-progress') {
+  if (detail === 'prospect') {
     if (!isFilled(draft.selectedSubDetail)) alerts.push(createAlert('meeting-followup-type', '후속 유형', '후속 진행은 아래 후속 유형 1개를 선택해야 합니다.', 'block', 'field', 'meeting', detail));
     if (['서류 보완 대기', '내부 검토 중', '장기 보류'].includes(draft.selectedSubDetail) && !isFilled(draft.postMeetingNote)) {
       alerts.push(createAlert('meeting-followup-note', '후속 진행 메모', '선택한 후속 진행 항목에 대한 메모가 필요합니다.', 'block', 'note', 'meeting', detail));
@@ -423,31 +408,27 @@ function collectMeetingAlerts(journey: RequestJourney, alerts: RequirementAlert[
     }
   }
 
-  if (detail === 'insurance-re-review') {
-    if (!isFilled(draft.designReviewNote)) alerts.push(createAlert('meeting-insurance-re-review-note', '보험 재심사 메모', '보험 재심사는 재심사 사유 또는 요청 메모가 필요합니다.', 'block', 'note', 'meeting', detail));
-  }
-
   if (detail === 'contract-failed') {
     if (!isFilled(draft.selectedSubDetail)) alerts.push(createAlert('meeting-contract-failed-reason', '계약실패 사유', '계약실패는 사유가 필요합니다.', 'block', 'field', 'meeting', detail));
   }
 
-  if (detail === 'on-site-impossible') {
+  if (detail === 'post-meeting-impossible') {
     if (!isFilled(draft.selectedSubDetail)) alerts.push(createAlert('meeting-onsite-impossible-reason', '현장불가 사유', '현장불가는 사유가 필요합니다.', 'block', 'field', 'meeting', detail));
   }
 
-  if (detail === 'meeting-cancelled') {
+  if (detail === 'pre-meeting-cancel') {
     if (!isFilled(draft.selectedSubDetail)) alerts.push(createAlert('meeting-cancel-reason', '취소 사유', '미팅 취소는 사유가 필요합니다.', 'block', 'field', 'meeting', detail));
     if (!isFilled(draft.callAttemptLog)) alerts.push(createAlert('meeting-cancel-channel', '취소 채널/로그', '미팅 취소는 고객 접촉 로그가 필요합니다.', 'block', 'note', 'meeting', detail));
     if (!isFilled(draft.postMeetingNote)) alerts.push(createAlert('meeting-cancel-recontact', '재접촉 여부', '미팅 취소는 재접촉 여부 기록이 필요합니다.', 'block', 'note', 'meeting', detail));
   }
 
-  if (detail === 'no-show') {
+  if (detail === 'final-absent') {
     if (!draft.arrivalChecked) alerts.push(createAlert('meeting-noshow-arrival', '도착 확인', '노쇼는 현장 도착 확인 기록이 필요합니다.', 'block', 'field', 'meeting', detail));
     if (!isFilled(draft.callAttemptLog)) alerts.push(createAlert('meeting-noshow-log', '연락 시도 로그', '노쇼는 연락 시도 로그가 필요합니다.', 'block', 'note', 'meeting', detail));
     if (!isFilled(draft.followupDate) && !isFilled(draft.postMeetingNote)) alerts.push(createAlert('meeting-noshow-next', '후속 일정 여부', '노쇼는 후속 일정 또는 종료 메모가 필요합니다.', 'block', 'schedule', 'meeting', detail));
   }
 
-  if (detail === 'uw-rejected') {
+  if (detail === 'pre-meeting-impossible') {
     if (!isFilled(draft.selectedSubDetail)) alerts.push(createAlert('meeting-uw-reason', '심사 거절 사유', 'UW 거절은 사유가 필요합니다.', 'block', 'field', 'meeting', detail));
     if (!isFilled(draft.designReviewNote)) alerts.push(createAlert('meeting-uw-proof', '거절 근거', 'UW 거절은 근거 메모가 필요합니다.', 'block', 'note', 'meeting', detail));
     if (!isFilled(draft.alternativeProposal)) alerts.push(createAlert('meeting-uw-alt', '대체 제안', 'UW 거절은 대체 제안 여부를 기록해야 합니다.', 'block', 'note', 'meeting', detail));
@@ -555,17 +536,6 @@ export function validateSameOwnerAssignment(
   };
 }
 
-/** 중대질환(암/뇌/심장) 자동 감지 — 키워드 기반 */
-const CRITICAL_KEYWORDS = ['암', '뇌', '심장', '뇌출혈', '뇌경색', '심근경색', '악성종양', 'cancer', 'brain', 'heart'];
-
-export function detectCriticalCondition(
-  diagnosisText: string,
-): { isCritical: boolean; matchedKeywords: string[] } {
-  const lower = diagnosisText.toLowerCase();
-  const matched = CRITICAL_KEYWORDS.filter(kw => lower.includes(kw.toLowerCase()));
-  return { isCritical: matched.length > 0, matchedKeywords: matched };
-}
-
 /** 역할 기반 스텝 필터링 */
 export function getVisibleStepsForRole(
   journeyType: 'refund' | 'intro' | 'simple',
@@ -574,36 +544,6 @@ export function getVisibleStepsForRole(
 ): JourneyStep[] {
   const allSteps = getStepSequence(journeyType, dbCategory);
   return allSteps.filter(step => isStepVisibleToRole(step, role));
-}
-
-// ── Cut-rule 엔진 ──────────────────────────────────────────────
-export interface CutRuleResult {
-  shouldCut: boolean;
-  reason: string | null;
-  rule: string | null;
-}
-
-const CUT_RULES: { check: (ctx: CutRuleContext) => boolean; reason: string; rule: string }[] = [
-  { check: (c) => c.contactAttempts >= 5, reason: '부재 5회 이상', rule: 'absent_5' },
-  { check: (c) => c.explicitRefusal, reason: '고객 명시 거절', rule: 'explicit_refusal' },
-  { check: (c) => c.isCritical, reason: '중대질환(암/뇌/심) 진행불가', rule: 'critical_disease' },
-  { check: (c) => c.daysSinceLastContact >= 14, reason: '14일 무응답', rule: 'no_response_14d' },
-];
-
-interface CutRuleContext {
-  contactAttempts: number;
-  explicitRefusal: boolean;
-  isCritical: boolean;
-  daysSinceLastContact: number;
-}
-
-export function evaluateCutRules(ctx: CutRuleContext): CutRuleResult {
-  for (const rule of CUT_RULES) {
-    if (rule.check(ctx)) {
-      return { shouldCut: true, reason: rule.reason, rule: rule.rule };
-    }
-  }
-  return { shouldCut: false, reason: null, rule: null };
 }
 
 // ── DB 자동분류 엔진 ──────────────────────────────────────────

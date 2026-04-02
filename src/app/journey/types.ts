@@ -28,7 +28,6 @@ export type JourneyPhase =
 /** 3년환급 세부 스텝 (S1-S17) */
 export type RefundStep =
   | 'S1_inflow'                // 유입 (앱설치, 광고유입)
-  | 'S2_hira_lookup'           // 건강보험 조회
   | 'S3_refund_apply'          // 환급 신청
   | 'S4_screening'             // 선별/배정
   | 'S5_first_tm'              // 1차 TM (초기상담)
@@ -48,7 +47,6 @@ export type RefundStep =
 /** 소개 세부 스텝 (R1-R14) — Notion 기준: 선별/TM 스킵, Same-owner 배정 */
 export type ReferralStep =
   | 'R1_referral_inflow'       // 소개 유입 (추천코드/링크)
-  | 'R2_hira_lookup'           // 건강보험 조회
   | 'R3_refund_apply'          // 환급 신청
   | 'R4_pre_analysis'          // 사전분석 (Same-owner 자동배정, 선별/TM 스킵)
   | 'R5_meeting_execution'     // 미팅 진행
@@ -242,8 +240,6 @@ export interface ConsultationDraft {
   callRecordLink: string;
   transcriptAttached: boolean;
   reentryEligible: string;
-  hiraReviewedBy: string;
-  hiraReviewedAt: string;
   needMedicalDocs: string;
   claimOpportunityNote: string;
   simpleHandlingMode: string;
@@ -252,6 +248,8 @@ export interface ConsultationDraft {
   referralName: string;
   referralRelationship: string;
   referralBenefitExplained: boolean;
+  hasReferral: boolean;
+  referralNote: string;
   healthChecklist?: {
     noRecentTreatment: boolean;
     noRecentInjury: boolean;
@@ -259,6 +257,14 @@ export interface ConsultationDraft {
     criticalCured5yr: boolean;
   };
 }
+
+export interface MeetingCompanionInfo {
+  name: string;
+  relationship?: string;
+  phone?: string;
+}
+
+export type MeetingDocStatus = 'idle' | 'requested' | 'sent' | 'received';
 
 export interface MeetingContractSnapshot {
   id?: string;
@@ -353,7 +359,7 @@ export interface MeetingDraft {
   meetingTime: string;
   meetingLocation: string;
   meetingConfirmed: boolean;
-  companions: string[];
+  companions: MeetingCompanionInfo[];
   authCodeReceived: boolean;
   insuranceSystemRegistered: boolean;
   statusInputDone: boolean;
@@ -437,6 +443,8 @@ export interface MeetingDraft {
   postStatusChanged: boolean;
   postContractInfoSaved: boolean;
   postThreeDocSubmitted: boolean;
+  policyDocStatus: MeetingDocStatus;
+  paymentDocStatus: MeetingDocStatus;
 }
 
 /** 미팅 5단계 완료 조건 - Step Gate에서 사용 */
@@ -445,6 +453,7 @@ export type MeetingStepNumber = 1 | 2 | 3 | 4 | 5 | 6;
 export interface RequestJourney {
   requestId: string;
   customerName: string;
+  customerPhone?: string;
   journeyType: JourneyType;
   owner: string;
   stage: JourneyStage;

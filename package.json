@@ -4,11 +4,14 @@
   "version": "0.0.1",
   "type": "module",
   "scripts": {
-    "dev:local": "NODE_DISABLE_COMPILE_CACHE=1 vite --host 127.0.0.1",
-    "dev:network": "NODE_DISABLE_COMPILE_CACHE=1 vite --host 0.0.0.0",
-    "build": "NODE_DISABLE_COMPILE_CACHE=1 vite build",
-    "dev": "NODE_DISABLE_COMPILE_CACHE=1 vite",
-    "preview": "NODE_DISABLE_COMPILE_CACHE=1 vite preview --host 0.0.0.0 --port 4173",
+    "dev:local": "VITE_DEV_HOST=127.0.0.1 node tools/vite-dev.cjs",
+    "dev:network": "VITE_DEV_HOST=0.0.0.0 node tools/vite-dev.cjs",
+    "build": "node tools/vite-build.cjs",
+    "typecheck": "node tools/typecheck.cjs",
+    "verify:baseline": "npm run typecheck && npm run build",
+    "dev": "node tools/vite-dev.cjs",
+    "preview:local": "VITE_PREVIEW_HOST=127.0.0.1 VITE_PREVIEW_PORT=4173 node tools/vite-preview.cjs",
+    "preview": "VITE_PREVIEW_HOST=0.0.0.0 VITE_PREVIEW_PORT=4173 node tools/vite-preview.cjs",
     "generate:intake-dummy": "python3 tools/generate_intake_dummy.py --input intake_case_master_latest.xlsx --app-limit 2000 --app-ts-out src/app/mockData/generated/customerMasterDerived.generated.ts --full-json-out src/app/mockData/generated/intake_case_master_latest.full.json --full-csv-out src/app/mockData/generated/intake_case_master_latest.full.csv"
   },
   "dependencies": {
@@ -72,11 +75,13 @@
     "vaul": "1.1.2"
   },
   "devDependencies": {
-    "@tailwindcss/vite": "4.1.12",
-    "@vitejs/plugin-react": "4.7.0",
+    "@tailwindcss/vite": "^4.2.2",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.1",
     "playwright": "^1.58.2",
-    "tailwindcss": "4.1.12",
-    "vite": "6.3.5"
+    "tailwindcss": "^4.2.2",
+    "vite": "^8.0.3"
   },
   "peerDependencies": {
     "react": "18.3.1",
@@ -92,7 +97,13 @@
   },
   "pnpm": {
     "overrides": {
-      "vite": "6.3.5"
+      "vite": "8.0.3",
+      "rolldown": "1.0.0-rc.13",
+      "@rolldown/pluginutils": "1.0.0-rc.13"
     }
+  },
+  "overrides": {
+    "rolldown": "1.0.0-rc.13",
+    "@rolldown/pluginutils": "1.0.0-rc.13"
   }
 }

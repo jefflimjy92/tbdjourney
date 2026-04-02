@@ -63,8 +63,6 @@ export const DEFAULT_CONSULTATION_DRAFT: ConsultationDraft = {
   callRecordLink: '',
   transcriptAttached: false,
   reentryEligible: '',
-  hiraReviewedBy: '',
-  hiraReviewedAt: '',
   needMedicalDocs: '',
   claimOpportunityNote: '',
   simpleHandlingMode: '',
@@ -73,6 +71,8 @@ export const DEFAULT_CONSULTATION_DRAFT: ConsultationDraft = {
   referralName: '',
   referralRelationship: '',
   referralBenefitExplained: false,
+  hasReferral: false,
+  referralNote: '',
 };
 
 export const DEFAULT_MEETING_DRAFT: MeetingDraft = {
@@ -164,6 +164,8 @@ export const DEFAULT_MEETING_DRAFT: MeetingDraft = {
   postStatusChanged: false,
   postContractInfoSaved: false,
   postThreeDocSubmitted: false,
+  policyDocStatus: 'idle',
+  paymentDocStatus: 'idle',
 };
 
 function baseDocuments(): DocumentRequirement[] {
@@ -274,7 +276,7 @@ export function createInitialJourneys(): RequestJourney[] {
       dbCategoryV2: 'compensation' as DbCategoryV2,
       stepHistory: [
         { step: 'S1_inflow' as JourneyStep, enteredAt: '2026-03-09 08:00', exitedAt: '2026-03-09 08:05' },
-        { step: 'S2_hira_lookup' as JourneyStep, enteredAt: '2026-03-09 08:05', exitedAt: '2026-03-09 09:12' },
+        { step: 'S3_refund_apply' as JourneyStep, enteredAt: '2026-03-09 08:05', exitedAt: '2026-03-09 09:12' },
         { step: 'S3_refund_apply' as JourneyStep, enteredAt: '2026-03-09 09:12', exitedAt: '2026-03-09 09:30' },
         { step: 'S4_screening' as JourneyStep, enteredAt: '2026-03-09 09:30', exitedAt: '2026-03-10 09:00' },
       ],
@@ -494,7 +496,7 @@ export function createInitialJourneys(): RequestJourney[] {
       dbCategoryV2: 'referral' as DbCategoryV2,
       stepHistory: [
         { step: 'R1_referral_inflow' as JourneyStep, enteredAt: '2026-03-08 08:00', exitedAt: '2026-03-08 08:10' },
-        { step: 'R2_hira_lookup' as JourneyStep, enteredAt: '2026-03-08 08:10', exitedAt: '2026-03-08 10:00' },
+        { step: 'R3_refund_apply' as JourneyStep, enteredAt: '2026-03-08 08:10', exitedAt: '2026-03-08 10:00' },
         { step: 'R3_refund_apply' as JourneyStep, enteredAt: '2026-03-08 10:00', exitedAt: '2026-03-08 14:00' },
         { step: 'R4_pre_analysis' as JourneyStep, enteredAt: '2026-03-08 14:00', exitedAt: '2026-03-09 09:00' },
       ],
@@ -848,7 +850,7 @@ export function createInitialJourneys(): RequestJourney[] {
       nextAction: '고객 재확인 후 추가 제안 준비',
       currentStageStatus: {
         stageId: 'meeting',
-        statusCode: 'followup-in-progress',
+        statusCode: 'prospect',
         statusLabel: '후속 진행',
         enteredAt: '2026-03-14 16:00',
         enteredBy: '이태윤',
@@ -870,7 +872,7 @@ export function createInitialJourneys(): RequestJourney[] {
       meetingDraft: {
         ...DEFAULT_MEETING_DRAFT,
         selectedGroup: 'NEGOTIATING',
-        selectedDetail: 'followup-in-progress',
+        selectedDetail: 'prospect',
         dbCategory: 'possible',
         meetingTime: '2026-03-14 15:00',
         meetingLocation: '서울특별시 노원구 월계동',
@@ -1073,7 +1075,7 @@ export function createInitialJourneys(): RequestJourney[] {
       meetingDraft: {
         ...DEFAULT_MEETING_DRAFT,
         selectedGroup: 'NEGOTIATING',
-        selectedDetail: 'followup-in-progress',
+        selectedDetail: 'prospect',
         dbCategory: 'companion',
         meetingTime: '2026-03-17 16:30',
         meetingLocation: '서울 마포구 공덕동 마포대로 92',
@@ -1325,7 +1327,7 @@ export function createInitialJourneys(): RequestJourney[] {
       dbCategoryV2: 'compensation' as DbCategoryV2,
       stepHistory: [
         { step: 'S1_inflow' as JourneyStep, enteredAt: '2026-03-20 09:00', exitedAt: '2026-03-20 09:10' },
-        { step: 'S2_hira_lookup' as JourneyStep, enteredAt: '2026-03-20 09:10', exitedAt: '2026-03-21 09:00' },
+        { step: 'S3_refund_apply' as JourneyStep, enteredAt: '2026-03-20 09:10', exitedAt: '2026-03-21 09:00' },
         { step: 'S3_refund_apply' as JourneyStep, enteredAt: '2026-03-21 09:00', exitedAt: '2026-03-21 09:20' },
         { step: 'S4_screening' as JourneyStep, enteredAt: '2026-03-21 09:20', exitedAt: '2026-03-22 09:00' },
         { step: 'S5_first_tm' as JourneyStep, enteredAt: '2026-03-22 10:00' },
@@ -1998,7 +2000,7 @@ export function createInitialJourneys(): RequestJourney[] {
       dbCategoryV2: 'referral' as DbCategoryV2,
       stepHistory: [
         { step: 'R1_inflow' as JourneyStep, enteredAt: '2026-03-22 09:00', exitedAt: '2026-03-22 09:20' },
-        { step: 'R2_hira_lookup' as JourneyStep, enteredAt: '2026-03-22 09:20', exitedAt: '2026-03-23 09:00' },
+        { step: 'R3_refund_apply' as JourneyStep, enteredAt: '2026-03-22 09:20', exitedAt: '2026-03-23 09:00' },
         { step: 'R4_pre_meeting' as JourneyStep, enteredAt: '2026-03-25 09:00', exitedAt: '2026-03-28 17:00' },
         { step: 'R5_meeting_execution' as JourneyStep, enteredAt: '2026-03-29 10:00', exitedAt: '2026-03-29 15:30' },
         { step: 'R6_contract_close' as JourneyStep, enteredAt: '2026-03-29 16:00' },
@@ -2048,7 +2050,7 @@ export function createInitialJourneys(): RequestJourney[] {
       notificationState: 'sent',
       currentStageStatus: {
         stageId: 'meeting',
-        statusCode: 'followup-in-progress',
+        statusCode: 'prospect',
         statusLabel: '후속 진행',
         enteredAt: '2026-03-30 09:00',
         enteredBy: '전선덕',
@@ -2077,7 +2079,7 @@ export function createInitialJourneys(): RequestJourney[] {
       meetingDraft: {
         ...DEFAULT_MEETING_DRAFT,
         selectedGroup: 'NEGOTIATING',
-        selectedDetail: 'followup-in-progress',
+        selectedDetail: 'prospect',
         assignmentStatus: 'confirmed',
         assignedTeam: '미팅팀',
         assignedStaff: '전선덕',

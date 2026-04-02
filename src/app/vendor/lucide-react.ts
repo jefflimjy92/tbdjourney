@@ -28,6 +28,7 @@ export { default as Check } from 'lucide-react/dist/esm/icons/check.js';
 export { default as CheckCircle } from 'lucide-react/dist/esm/icons/circle-check-big.js';
 export { default as CheckCircle2 } from 'lucide-react/dist/esm/icons/circle-check.js';
 export { default as CheckSquare } from 'lucide-react/dist/esm/icons/square-check-big.js';
+export { default as Square } from 'lucide-react/dist/esm/icons/square.js';
 export { default as ChevronDown } from 'lucide-react/dist/esm/icons/chevron-down.js';
 export { default as ChevronLeft } from 'lucide-react/dist/esm/icons/chevron-left.js';
 export { default as ChevronRight } from 'lucide-react/dist/esm/icons/chevron-right.js';

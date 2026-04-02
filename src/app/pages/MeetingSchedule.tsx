@@ -5,7 +5,6 @@ import {
   ChevronLeft,
   ChevronRight,
   Calendar as CalendarIcon,
-  List as ListIcon,
   User,
   MoreHorizontal,
   Plus,
@@ -54,6 +53,12 @@ import { RequestDetailView } from '@/app/components/RequestDetailView';
 import { toast } from 'sonner';
 import { useRef } from 'react';
 import { useJourneyStore } from '@/app/journey/JourneyContext';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/app/components/ui/dropdown-menu';
 import {
   buildJourneyScheduleItems,
   formatMeetingContractAmount,
@@ -300,9 +305,10 @@ interface MeetingScheduleProps {
 export function MeetingSchedule({ onNavigate }: MeetingScheduleProps) {
   const { journeys } = useJourneyStore();
   const currentWeek = getWeekKey(new Date());
-  const [viewMode, setViewMode] = useState<'staff' | 'time'>('staff');
+  const [calendarGrouping, setCalendarGrouping] = useState<'staff' | 'time'>('staff');
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedWeek, setSelectedWeek] = useState(currentWeek);
+  const [weeklyBaseDate, setWeeklyBaseDate] = useState(() => startOfWeek(new Date(), { locale: ko }));
   const [selectedTeam, setSelectedTeam] = useState('all');
   const [selectedStaff, setSelectedStaff] = useState('all');
   const [selectedDateDetail, setSelectedDateDetail] = useState<Date | null>(null); // For sidebar details (date)
@@ -457,68 +463,61 @@ export function MeetingSchedule({ onNavigate }: MeetingScheduleProps) {
            
            <div className="h-6 w-px bg-slate-200" />
 
-           <div className="flex bg-slate-100 p-1 rounded-lg border border-slate-200">
-              <button 
-                 onClick={() => setViewMode('staff')}
-                 className={clsx(
-                    "flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-bold transition-all",
-                    viewMode === 'staff' ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700"
-                 )}
-              >
-                 <Users size={14} /> 직원별
-              </button>
-              <button 
-                 onClick={() => setViewMode('time')}
-                 className={clsx(
-                    "flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-bold transition-all",
-                    viewMode === 'time' ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700"
-                 )}
-              >
-                 <ListIcon size={14} /> 시간순
-              </button>
+           <div className="flex items-center gap-1.5 px-2 py-1 bg-slate-50 rounded border border-slate-200">
+              <CalendarIcon size={13} className="text-slate-400" />
+              <span className="text-xs font-bold text-slate-600 mr-1">주간 캘린더</span>
+              <div className="flex items-center gap-1 bg-slate-100 rounded p-0.5">
+                <button
+                  onClick={() => setCalendarGrouping('staff')}
+                  className={clsx(
+                    "px-2.5 py-1 text-[10px] font-bold rounded transition-colors",
+                    calendarGrouping === 'staff' ? "bg-white text-slate-800 shadow-sm" : "text-slate-500"
+                  )}
+                >
+                  직원별
+                </button>
+                <button
+                  onClick={() => setCalendarGrouping('time')}
+                  className={clsx(
+                    "px-2.5 py-1 text-[10px] font-bold rounded transition-colors",
+                    calendarGrouping === 'time' ? "bg-white text-slate-800 shadow-sm" : "text-slate-500"
+                  )}
+                >
+                  시간순
+                </button>
+              </div>
            </div>
         </div>
       </div>
 
       {/* Main Content Area */}
-      <div className="flex-1 flex flex-col min-h-0 bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden relative">
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm relative">
          {/* Calendar/List Section */}
-         <div className={clsx(
-            "flex flex-col relative transition-all duration-300",
-            selectedMeeting ? "h-[55%]" : "h-full" // Shrink when feedback form is open
-         )}>
-            <div className="absolute top-4 left-4 z-10 flex items-center bg-white rounded-lg p-1 border border-slate-200 shadow-sm">
-                <button onClick={handlePrev} className="p-1 hover:bg-slate-50 rounded text-slate-500"><ChevronLeft size={18} /></button>
-                <span className="px-4 font-bold text-slate-700 text-sm min-w-[100px] text-center">{getTitle()}</span>
-                <button onClick={handleNext} className="p-1 hover:bg-slate-50 rounded text-slate-500"><ChevronRight size={18} /></button>
-            </div>
-
-            <div className="absolute top-4 left-[280px] z-10 flex gap-1">
-              {weekOptions.map((week) => (
-                <button
-                  key={week.key}
-                  onClick={() => setSelectedWeek(week.key)}
-                  className={clsx(
-                    "px-3 py-1.5 text-xs font-bold rounded-lg border transition-all",
-                    selectedWeek === week.key
-                      ? "bg-[#1e293b] text-white border-[#1e293b]"
-                      : "bg-white text-slate-500 border-slate-200 hover:bg-slate-50"
-                  )}
-                >
-                  {week.label}
-                </button>
-              ))}
-            </div>
-
-            {viewMode === 'staff' ? (
-               <MeetingStaffGroupedList meetingsByStaff={staffGroupedMeetings} onSelectMeeting={setSelectedMeeting} />
-            ) : (
-               <MeetingList 
-                  meetings={filteredMeetings} 
-                  onNavigate={onNavigate}
-                  onSelectMeeting={setSelectedMeeting}
-               />
-            )}
+         <div className="flex flex-col relative transition-all duration-300">
+            <WeeklyCalendarView
+               weeklyBaseDate={weeklyBaseDate}
+               allMeetings={allMeetings}
+               selectedTeam={selectedTeam}
+               selectedStaff={selectedStaff}
+               statusFilter={statusFilter}
+               onPrevWeek={() => setWeeklyBaseDate(d => subWeeks(d, 1))}
+               onNextWeek={() => setWeeklyBaseDate(d => addWeeks(d, 1))}
+               onSelectMeeting={setSelectedMeeting}
+               currentDate={currentDate}
+               onPrevMonth={handlePrev}
+               onNextMonth={handleNext}
+               weekOptions={weekOptions}
+               selectedWeek={selectedWeek}
+               calendarGrouping={calendarGrouping}
+               onSelectWeek={(key: string) => {
+                 setSelectedWeek(key);
+                 const idx = weekOptions.findIndex(w => w.key === key);
+                 if (idx !== -1) {
+                   const weeks = getWeeksInMonth(currentDate);
+                   if (weeks[idx]) setWeeklyBaseDate(startOfWeek(weeks[idx], { weekStartsOn: 0 }));
+                 }
+               }}
+            />
          </div>
 
          {/* Right Side Detail Panel (Date Details) */}
@@ -864,103 +863,357 @@ function MeetingCalendar({
 }
 
 function MeetingList({ meetings, onNavigate, onSelectMeeting }: { meetings: MeetingScheduleItem[], onNavigate?: (path: string) => void, onSelectMeeting: (meeting: MeetingScheduleItem) => void }) {
+   if (meetings.length === 0) {
+      return (
+         <div className="flex h-full items-center justify-center pt-14 text-sm text-slate-400">
+            해당 기간에 예정된 미팅이 없습니다.
+         </div>
+      );
+   }
+
+   // Group meetings by date for timeline display
+   const grouped = new Map<string, MeetingScheduleItem[]>();
+   for (const m of meetings) {
+      const existing = grouped.get(m.date) || [];
+      existing.push(m);
+      grouped.set(m.date, existing);
+   }
+   const sortedDates = Array.from(grouped.keys()).sort();
+
    return (
-      <div className="flex-1 overflow-auto pt-14">
-         <table className="w-full text-sm text-left">
-            <thead className="text-xs text-slate-500 uppercase bg-slate-50 border-b border-slate-200 sticky top-0 z-10">
-               <tr>
-                  <th className="px-6 py-3 font-medium">상태</th>
-                  <th className="px-6 py-3 font-medium">계약</th>
-                  <th className="px-6 py-3 font-medium">일시</th>
-                  <th className="px-6 py-3 font-medium">팀</th>
-                  <th className="px-6 py-3 font-medium">담당자</th>
-                  <th className="px-6 py-3 font-medium">고객명</th>
-                  <th className="px-6 py-3 font-medium">주소</th>
-                  <th className="px-6 py-3 font-medium">DB 유형</th>
-                  <th className="px-6 py-3 font-medium text-right">관리</th>
-               </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-               {meetings.length === 0 ? (
-                  <tr>
-                     <td colSpan={9} className="text-center py-12 text-slate-400">
-                        해당 기간에 예정된 미팅이 없습니다.
-                     </td>
-                  </tr>
-               ) : (
-                  meetings.map((item) => (
-                     <tr 
-                        key={item.id} 
-                        onClick={() => {
-                           onSelectMeeting(item);
-                        }}
-                        className="hover:bg-slate-50 transition-colors cursor-pointer group"
-                     >
-                        <td className="px-6 py-4">
-                           <span className={clsx(
-                              "inline-flex px-2 py-0.5 rounded text-xs font-bold border",
-                              getMeetingStatusBadgeClassName(item.status)
-                           )}>
-                              {getMeetingStatusLabel(item)}
-                           </span>
-                        </td>
-                        <td className="px-6 py-4">
-                           {item.contractCount ? (
-                              <div className="text-xs font-bold text-emerald-700">{getContractSummaryLabel(item)}</div>
-                           ) : (
-                              <span className="text-xs text-slate-300">-</span>
-                           )}
-                        </td>
-                        <td className="px-6 py-4">
-                           <div className="font-bold text-[#1e293b]">{item.date}</div>
-                           <div className="text-xs text-slate-400">{item.time}</div>
-                        </td>
-                        <td className="px-6 py-4">
-                           <span className="inline-flex px-2 py-0.5 rounded text-xs font-bold border bg-slate-50 text-slate-600 border-slate-200">
-                              {item.team}
-                           </span>
-                        </td>
-                        <td className="px-6 py-4">
-                           <div className="flex items-center gap-2">
-                              <div className={clsx(
-                                 "size-6 rounded-full flex items-center justify-center text-[10px] font-bold",
-                                 STAFF_LIST.find(s => s.name === item.staff)?.color || "bg-slate-100 text-slate-600"
-                              )}>
-                                 {item.staff[0]}
-                              </div>
-                              <span className="text-slate-600 font-medium">{item.staff}</span>
-                           </div>
-                        </td>
-                        <td className="px-6 py-4 font-bold text-[#1e293b]">{item.customer}</td>
-                        <td className="px-6 py-4 text-slate-600">
-                           <div className="flex items-center gap-1">
-                              <MapPin size={14} className="text-slate-400"/>
-                              {formatShortAddress(item.location)}
-                           </div>
-                        </td>
-                        <td className="px-6 py-4">
-                           <span className={clsx("text-xs px-2 py-1 rounded border font-bold", getDbTypeClassName(item.dbType))}>
-                              {item.dbType}
-                           </span>
-                        </td>
-                        <td className="px-6 py-4 text-right">
-                           <button 
-                              className="p-1 hover:bg-slate-200 rounded text-slate-400 hover:text-slate-600"
-                              onClick={(e) => {
-                                 e.stopPropagation();
-                                 // Menu open logic here
-                              }}
+      <div className="flex-1 overflow-auto pt-14 px-6 py-20">
+         <div className="space-y-6">
+            {sortedDates.map((date) => {
+               const dayMeetings = grouped.get(date)!;
+               const parsedDate = parseISO(date);
+               return (
+                  <section key={date}>
+                     {/* Date header */}
+                     <div className="flex items-center gap-3 mb-3">
+                        <div className={clsx(
+                           "text-xs font-bold px-2.5 py-1 rounded-full border",
+                           isToday(parsedDate)
+                              ? "bg-rose-500 text-white border-rose-500"
+                              : "bg-slate-100 text-slate-600 border-slate-200"
+                        )}>
+                           {format(parsedDate, 'M월 d일 (E)', { locale: ko })}
+                        </div>
+                        <span className="text-xs text-slate-400 font-medium">{dayMeetings.length}건</span>
+                        <div className="flex-1 h-px bg-slate-100" />
+                     </div>
+
+                     {/* Meeting cards */}
+                     <div className="space-y-2">
+                        {dayMeetings.map((item) => (
+                           <button
+                              key={item.id}
+                              type="button"
+                              onClick={() => onSelectMeeting(item)}
+                              className={clsx(
+                                 "w-full flex items-center gap-3 px-4 py-3 rounded-xl border text-left transition hover:scale-[1.005] shadow-sm",
+                                 getMeetingStatusCardClassName(item.status),
+                                 item.status === 'cancelled' && "opacity-75"
+                              )}
                            >
-                              <MoreHorizontal size={16} />
+                              {/* Time */}
+                              <div className="w-14 shrink-0 text-sm font-bold text-slate-800 tabular-nums">
+                                 {item.time === '미정' ? '배정중' : item.time}
+                              </div>
+
+                              {/* Divider dot */}
+                              <div className={clsx("size-2 shrink-0 rounded-full", getMeetingStatusDotClassName(item.status))} />
+
+                              {/* Customer + region + status */}
+                              <div className="flex-1 min-w-0 flex items-center gap-2 flex-wrap">
+                                 <span className="font-bold text-slate-900">{item.customer}</span>
+                                 <span className="text-xs text-slate-500 flex items-center gap-0.5">
+                                    <MapPin size={11} className="text-slate-400" />
+                                    {formatShortAddress(item.location)}
+                                 </span>
+                                 <span className={clsx("text-[10px] px-1.5 py-0.5 rounded-full border font-bold", getMeetingStatusBadgeClassName(item.status))}>
+                                    {getMeetingStatusLabel(item)}
+                                 </span>
+                                 {item.contractCount ? (
+                                    <span className="text-[10px] font-bold text-emerald-700">
+                                       계약 {getContractSummaryLabel(item)}
+                                    </span>
+                                 ) : null}
+                              </div>
+
+                              {/* Staff */}
+                              <div className="shrink-0 flex items-center gap-1.5">
+                                 <div className={clsx(
+                                    "size-6 rounded-full flex items-center justify-center text-[10px] font-bold",
+                                    STAFF_LIST.find(s => s.name === item.staff)?.color || "bg-slate-100 text-slate-600"
+                                 )}>
+                                    {item.staff[0]}
+                                 </div>
+                                 <span className="text-xs text-slate-600 font-medium">{item.staff}</span>
+                              </div>
+
+                              {/* Actions */}
+                              <DropdownMenu>
+                                 <DropdownMenuTrigger asChild>
+                                    <div
+                                       role="button"
+                                       className="p-1 hover:bg-black/5 rounded text-slate-400 hover:text-slate-600 shrink-0"
+                                       onClick={(e) => e.stopPropagation()}
+                                    >
+                                       <MoreHorizontal size={16} />
+                                    </div>
+                                 </DropdownMenuTrigger>
+                                 <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+                                    <DropdownMenuItem onClick={() => { if (onNavigate) onNavigate(`case-detail:${item.requestId}`); }}>
+                                       케이스 상세 보기
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem onClick={() => { toast('일정 변경은 준비 중입니다'); }}>
+                                       일정 변경
+                                    </DropdownMenuItem>
+                                 </DropdownMenuContent>
+                              </DropdownMenu>
                            </button>
-                        </td>
-                     </tr>
-                  ))
-               )}
-            </tbody>
-         </table>
+                        ))}
+                     </div>
+                  </section>
+               );
+            })}
+         </div>
       </div>
    );
+}
+
+// --- Weekly Calendar View ---
+
+const KO_DAY_LABELS = ['일', '월', '화', '수', '목', '금', '토'];
+const DAY_HEADER_BG = ['bg-red-50', 'bg-slate-50', 'bg-slate-50', 'bg-slate-50', 'bg-slate-50', 'bg-slate-50', 'bg-blue-50'];
+const DAY_HEADER_TEXT = ['text-red-500', 'text-slate-800', 'text-slate-800', 'text-slate-800', 'text-slate-800', 'text-slate-800', 'text-blue-500'];
+
+function groupBy<T>(arr: T[], fn: (item: T) => string): Record<string, T[]> {
+  return arr.reduce((acc, item) => {
+    const key = fn(item);
+    (acc[key] ??= []).push(item);
+    return acc;
+  }, {} as Record<string, T[]>);
+}
+
+function getMeetingEntryColor(status: MeetingScheduleStatus): string {
+  if (status === 'cancelled') return 'text-red-500';
+  if (status === 'contract-completed') return 'text-emerald-600';
+  if (status === 'followup') return 'text-indigo-600';
+  return 'text-slate-600';
+}
+
+function WeeklyCalendarView({
+  weeklyBaseDate,
+  allMeetings,
+  selectedTeam,
+  selectedStaff,
+  statusFilter,
+  onPrevWeek,
+  onNextWeek,
+  onSelectMeeting,
+  currentDate,
+  onPrevMonth,
+  onNextMonth,
+  weekOptions,
+  selectedWeek,
+  onSelectWeek,
+  calendarGrouping,
+}: {
+  weeklyBaseDate: Date;
+  allMeetings: MeetingScheduleItem[];
+  selectedTeam: string;
+  selectedStaff: string;
+  statusFilter: string;
+  onPrevWeek: () => void;
+  onNextWeek: () => void;
+  onSelectMeeting: (meeting: MeetingScheduleItem) => void;
+  currentDate: Date;
+  onPrevMonth: () => void;
+  onNextMonth: () => void;
+  weekOptions: Array<{ key: string; label: string }>;
+  selectedWeek: string;
+  onSelectWeek: (key: string) => void;
+  calendarGrouping: 'staff' | 'time';
+}) {
+  // Build 7-day array starting Sunday
+  const weekStart = startOfWeek(weeklyBaseDate, { weekStartsOn: 0 });
+  const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
+
+  // Filter meetings for this week with all active filters
+  const weekMeetings = allMeetings.filter((m) => {
+    const d = parseISO(m.date);
+    if (d < days[0] || d > days[6]) return false;
+    if (selectedTeam !== 'all' && m.team !== selectedTeam) return false;
+    if (selectedStaff !== 'all' && m.staff !== STAFF_LIST.find((s) => s.id === selectedStaff)?.name) return false;
+    if (statusFilter === 'contract-completed' && m.status !== 'contract-completed') return false;
+    if (statusFilter === 'scheduled' && m.status !== 'scheduled') return false;
+    if (statusFilter === 'followup' && m.status !== 'followup') return false;
+    if (statusFilter === 'pending-assignment' && m.status !== 'pending-assignment') return false;
+    if (statusFilter === 'cancelled' && m.status !== 'cancelled') return false;
+    if (statusFilter === 'impossible' && !['impossible', 'noshow'].includes(m.status)) return false;
+    return true;
+  });
+
+  const totalCount = weekMeetings.length;
+
+  return (
+    <div className="flex flex-col">
+      {/* Top: month nav + week tabs */}
+      <div className="flex items-center gap-2 px-4 py-2.5 border-b border-slate-200 bg-slate-50 shrink-0 flex-wrap">
+        {/* Month nav */}
+        <div className="flex items-center gap-1">
+          <button
+            onClick={onPrevMonth}
+            className="p-1 hover:bg-slate-200 rounded text-slate-500 transition-colors"
+          >
+            <ChevronLeft size={15} />
+          </button>
+          <span className="text-sm font-bold text-slate-700 min-w-[90px] text-center">
+            {format(currentDate, 'yyyy년 M월')}
+          </span>
+          <button
+            onClick={onNextMonth}
+            className="p-1 hover:bg-slate-200 rounded text-slate-500 transition-colors"
+          >
+            <ChevronRight size={15} />
+          </button>
+        </div>
+
+        <div className="h-5 w-px bg-slate-200" />
+
+        {/* Week tabs */}
+        <div className="flex gap-1">
+          {weekOptions.map((week) => (
+            <button
+              key={week.key}
+              onClick={() => onSelectWeek(week.key)}
+              className={clsx(
+                'px-2.5 py-1 text-xs font-bold rounded border transition-all',
+                selectedWeek === week.key
+                  ? 'bg-[#1e293b] text-white border-[#1e293b]'
+                  : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-100'
+              )}
+            >
+              {week.label}
+            </button>
+          ))}
+          <span className="ml-2 text-xs text-slate-400 self-center">전체 {totalCount}건</span>
+        </div>
+
+        <div className="ml-auto flex items-center gap-1">
+          <button
+            onClick={onPrevWeek}
+            className="p-1 hover:bg-slate-200 rounded text-slate-500 transition-colors"
+          >
+            <ChevronLeft size={14} />
+          </button>
+          <span className="text-xs text-slate-500">
+            {format(days[0], 'M/d')} - {format(days[6], 'M/d')}
+          </span>
+          <button
+            onClick={onNextWeek}
+            className="p-1 hover:bg-slate-200 rounded text-slate-500 transition-colors"
+          >
+            <ChevronRight size={14} />
+          </button>
+        </div>
+      </div>
+
+      {/* 7-column grid */}
+      <div className="grid grid-cols-7 border-t border-slate-200">
+        {days.map((day) => {
+          const key = format(day, 'yyyy-MM-dd');
+          const dayOfWeek = day.getDay(); // 0=Sun, 6=Sat
+          const dayMeetings = weekMeetings.filter((m) => m.date === key);
+          const isTodayDate = isToday(day);
+
+          // Group by staff, sorted alphabetically
+          const byStaff = groupBy(dayMeetings, (m) => m.staff);
+          const staffEntries = Object.entries(byStaff).sort(([a], [b]) =>
+            a.localeCompare(b, 'ko')
+          );
+
+          return (
+            <div
+              key={key}
+              className="flex flex-col border-r border-slate-200 last:border-r-0"
+            >
+              {/* Column header */}
+              <div
+                className={clsx(
+                  'shrink-0 px-2 py-1.5 border-b border-slate-200 text-center',
+                  isTodayDate ? 'bg-blue-100' : DAY_HEADER_BG[dayOfWeek]
+                )}
+              >
+                <div className={clsx('text-xs font-bold', isTodayDate ? 'text-blue-700' : DAY_HEADER_TEXT[dayOfWeek])}>
+                  {KO_DAY_LABELS[dayOfWeek]}
+                </div>
+                <div className="text-sm font-bold text-slate-700 mt-0.5">
+                  {format(day, 'd')}
+                  <span className="text-[10px] text-slate-400 font-normal ml-1">
+                    ({dayMeetings.length}건)
+                  </span>
+                </div>
+              </div>
+
+              {/* Content — grouped by staff or sorted by time */}
+              <div className="p-1.5 space-y-1.5">
+                {dayMeetings.length === 0 ? (
+                  <p className="text-[10px] text-slate-300 text-center py-4 select-none">일정 없음</p>
+                ) : calendarGrouping === 'staff' ? (
+                  staffEntries.map(([staff, staffMeetings]) => (
+                    <div key={staff}>
+                      <p className="text-[10px] font-bold text-slate-800 bg-slate-100 px-1 py-0.5 rounded mb-0.5">
+                        {staff} ({staffMeetings.length}건)
+                      </p>
+                      <div className="space-y-0.5">
+                        {[...staffMeetings]
+                          .sort((a, b) => a.time.localeCompare(b.time))
+                          .map((m, i) => (
+                            <button
+                              key={m.id}
+                              type="button"
+                              onClick={() => onSelectMeeting(m)}
+                              className={clsx(
+                                'w-full text-left text-[10px] leading-tight pl-1 py-0.5 rounded hover:bg-slate-50 transition-colors',
+                                getMeetingEntryColor(m.status),
+                                m.status === 'cancelled' && 'line-through opacity-60'
+                              )}
+                            >
+                              {i + 1}) {m.dbType} / {m.customer} / {formatShortAddress(m.location)} / {m.time} / {staff}
+                            </button>
+                          ))}
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="space-y-0.5">
+                    {[...dayMeetings]
+                      .sort((a, b) => a.time.localeCompare(b.time))
+                      .map((m, i) => (
+                        <button
+                          key={m.id}
+                          type="button"
+                          onClick={() => onSelectMeeting(m)}
+                          className={clsx(
+                            'w-full text-left text-[10px] leading-tight pl-1 py-0.5 rounded hover:bg-slate-50 transition-colors',
+                            getMeetingEntryColor(m.status),
+                            m.status === 'cancelled' && 'line-through opacity-60'
+                          )}
+                        >
+                          {i + 1}) {m.type || '3년환급'} / {m.customer} / {formatShortAddress(m.location)} / {m.time} / {m.staff}
+                        </button>
+                      ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
 }
 
 // Detail View Component

@@ -26,6 +26,7 @@ import {
   CheckCircle,
 } from 'lucide-react';
 import clsx from 'clsx';
+import { toast } from 'sonner';
 
 // --- Mock Data ---
 
@@ -333,11 +334,19 @@ export function DailyReport() {
             </div>
 
             {/* Actions */}
-            <button className="flex items-center gap-1.5 px-3 py-2 bg-[#1e293b] text-white rounded-lg text-xs font-bold hover:bg-slate-800 transition-colors">
+            <button
+              type="button"
+              onClick={() => toast('보고서 전송은 준비 중입니다')}
+              className="flex items-center gap-1.5 px-3 py-2 bg-[#1e293b] text-white rounded-lg text-xs font-bold hover:bg-slate-800 transition-colors"
+            >
               <Send size={14} />
               보고서 전송
             </button>
-            <button className="flex items-center gap-1.5 px-3 py-2 bg-white border border-slate-200 text-slate-600 rounded-lg text-xs font-bold hover:bg-slate-50 transition-colors">
+            <button
+              type="button"
+              onClick={() => toast('엑셀 다운로드는 준비 중입니다')}
+              className="flex items-center gap-1.5 px-3 py-2 bg-white border border-slate-200 text-slate-600 rounded-lg text-xs font-bold hover:bg-slate-50 transition-colors"
+            >
               <Download size={14} />
               엑셀
             </button>

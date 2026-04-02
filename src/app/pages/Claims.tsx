@@ -914,16 +914,27 @@ function ClaimList({
                    <td className="px-6 py-4 text-slate-600">{item.date}</td>
                    <td className="px-6 py-4 text-slate-600">{item.manager}</td>
                    <td className="px-6 py-4">
-                     <span className={clsx(
-                       "inline-flex px-2 py-0.5 rounded text-xs font-bold border",
-                       item.status === '분석중' ? "bg-amber-50 text-amber-700 border-amber-100" :
-                       "bg-blue-50 text-blue-700 border-blue-100"
-                     )}>
-                       {item.status}
-                     </span>
+                     <div className="flex flex-col gap-0.5">
+                       <span className="text-[10px] text-slate-400">{getClaimJourneyStage(item.status)}</span>
+                       <span className={clsx(
+                         "inline-flex px-2 py-0.5 rounded text-xs font-bold border w-fit",
+                         item.status === '분석중' ? "bg-amber-50 text-amber-700 border-amber-100" :
+                         item.status === '지급완료' || item.status === '완료' ? "bg-emerald-50 text-emerald-700 border-emerald-100" :
+                         "bg-blue-50 text-blue-700 border-blue-100"
+                       )}>
+                         {item.status}
+                       </span>
+                     </div>
                    </td>
                    <td className="px-6 py-4 text-right">
-                     <button className="text-white bg-[#1e293b] px-3 py-1.5 rounded text-xs hover:bg-slate-800 transition-colors shadow-sm opacity-0 group-hover:opacity-100">
+                     <button
+                       type="button"
+                       onClick={(event) => {
+                         event.stopPropagation();
+                         onSelect(item);
+                       }}
+                       className="text-white bg-[#1e293b] px-3 py-1.5 rounded text-xs hover:bg-slate-800 transition-colors shadow-sm opacity-0 group-hover:opacity-100"
+                     >
                        관리
                      </button>
                    </td>
@@ -1362,7 +1373,7 @@ function ClaimDetail({
       <div className="flex flex-col lg:flex-row flex-1 overflow-auto lg:overflow-hidden">
         
         {/* === Left Panel: Claim Action (1.5) === */}
-        <div className="w-full lg:flex-[1.5] lg:w-auto lg:min-w-[320px] bg-white lg:border-r border-b lg:border-b-0 border-slate-200 flex flex-col z-10">
+        <div className="hidden w-full lg:flex-[1.5] lg:w-auto lg:min-w-[320px] bg-white lg:border-r border-b lg:border-b-0 border-slate-200 flex-col z-10">
            <div className="p-4 border-b border-slate-100 bg-slate-50">
               <h2 className="font-bold text-[#1e293b] text-sm flex items-center gap-2">
                  <CheckCircle2 size={16} className="text-blue-600" /> 청구 및 정산 처리
@@ -1586,7 +1597,7 @@ function ClaimDetail({
         </div>
 
         {/* === Center Panel: Workspace (7) === */}
-        <div className="flex-1 lg:flex-[7] bg-[#F1F5F9] flex flex-col overflow-hidden">
+        <div className="flex-1 lg:flex-[5] bg-[#F1F5F9] flex flex-col overflow-hidden">
            
            {/* Tab Navigation */}
            <div className="bg-white border-b border-slate-200 px-2 flex items-center">
@@ -1980,6 +1991,7 @@ function ClaimDetail({
                  <div className="flex flex-col items-center justify-center h-64 text-slate-400">
                     <CreditCard size={48} className="mb-4 opacity-50" />
                     <p className="font-medium">보험사 지급 상세 내역 조회 서비스 준비중</p>
+                    <p className="mt-2 text-center text-xs text-slate-400">이번 배치에서는 청구 진행과 서류 발급 흐름을 우선 정리하고, 지급 상세 데이터 연동은 차기 범위에서 연결합니다.</p>
                  </div>
               )}
 

@@ -1,6 +1,7 @@
-import React, { Suspense, lazy, useEffect, useState } from 'react';
+import React, { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Bell,
+  Menu,
   Search,
   User,
 } from 'lucide-react';
@@ -10,7 +11,14 @@ import { IssuanceProvider } from '@/app/issuance/IssuanceContext';
 import { RoleProvider, useRole } from '@/app/auth/RoleContext';
 import { Sidebar } from '@/app/navigation/Sidebar';
 import { Handoff } from './pages/Handoff';
-import type { NavItem } from '@/app/navigation/navConfig';
+import {
+  LEGACY_DEBUG_TAB_ITEMS,
+  PROD_TAB_ITEMS,
+  getNavSectionsForRole,
+  type AppTab,
+  type LegacyDebugTabItem,
+  type NavItem,
+} from '@/app/navigation/navConfig';
 import type { TeamRole } from '@/app/journey/types';
 
 function lazyNamed<T extends Record<string, React.ComponentType<any>>, K extends keyof T>(
@@ -69,48 +77,24 @@ const DEBUG_ROLE_SET = new Set<TeamRole>([
   'admin',
 ]);
 
-const DEBUG_TAB_SET = new Set<NavItem>([
-  'dashboard',
-  'customers',
-  'leads',
-  'requests',
-  'case-detail',
-  'consultation',
-  'tm-first',
-  'tm-second',
-  'tm-checklist',
-  'handoff',
-  'meeting-schedule',
-  'meeting-all',
-  'meeting-refund',
-  'meeting-simple',
-  'meeting-pre-analysis',
-  'meeting-on-site',
-  'meeting-contract-close',
-  'contracts',
-  'claims-all',
-  'claims-refund',
-  'claims-simple',
-  'claims-issuance',
-  'claims-receipt',
-  'claims-unpaid',
-  'claims-doc-issuance',
-  'claims-final',
-  'issuance-master',
-  'issuance-manager',
-  'issuance-staff',
-  'payment-confirm',
-  'aftercare',
-  'referral-management',
-  'simple-claims',
-  'voc',
-  'compliance',
-  'admin-operations',
-  'dropoff',
-  'daily-report',
-  'documents',
-  'settings',
+const PROD_TAB_SET = new Set<NavItem>(PROD_TAB_ITEMS);
+const DEV_ONLY_TABS = new Set<LegacyDebugTabItem>(LEGACY_DEBUG_TAB_ITEMS);
+const DEBUG_TAB_SET = new Set<AppTab>([
+  ...PROD_TAB_ITEMS,
+  ...(import.meta.env.DEV ? LEGACY_DEBUG_TAB_ITEMS : []),
 ]);
+
+function isProdTab(tab: string): tab is NavItem {
+  return PROD_TAB_SET.has(tab as NavItem);
+}
+
+function isDevOnlyTab(tab: string): tab is LegacyDebugTabItem {
+  return DEV_ONLY_TABS.has(tab as LegacyDebugTabItem);
+}
+
+function isDebugTab(tab: string): tab is AppTab {
+  return isProdTab(tab) || (import.meta.env.DEV && isDevOnlyTab(tab));
+}
 
 export default function App() {
   return (
@@ -125,12 +109,39 @@ export default function App() {
 }
 
 function AppShell() {
-  const [activeTab, setActiveTab] = useState<NavItem>('requests');
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [activeTab, setActiveTab] = useState<AppTab>('requests');
+  const [isSidebarOpen, setIsSidebarOpen] = useState(() => (
+    typeof window === 'undefined' ? true : window.innerWidth >= 1024
+  ));
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
   const [targetRequestId, setTargetRequestId] = useState<string | null>(null);
   const [initialSection, setInitialSection] = useState<'call' | 'sales' | 'claims'>('call');
-  const { roleLabel, setRole } = useRole();
+  const { currentRole, roleLabel, setRole } = useRole();
+  const canOverrideRole = import.meta.env.DEV;
+
+  const collapseSidebarOnMobile = () => {
+    if (typeof window !== 'undefined' && window.innerWidth < 1024) {
+      setIsSidebarOpen(false);
+    }
+  };
+
+  const allowedNavItems = useMemo(() => {
+    const sections = getNavSectionsForRole(currentRole);
+    const items = new Set<NavItem>(['dashboard', 'case-detail']);
+    sections.forEach((section) => {
+      if (section.navItem) items.add(section.navItem);
+      section.children?.forEach((child) => items.add(child.navItem));
+    });
+    return items;
+  }, [currentRole]);
+
+  const canAccessTab = useCallback((tab: AppTab) => {
+    if (isDevOnlyTab(tab)) {
+      return import.meta.env.DEV;
+    }
+
+    return allowedNavItems.has(tab);
+  }, [allowedNavItems]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -141,7 +152,7 @@ function AppShell() {
     const debugRequestId = params.get('requestId');
     const debugSection = params.get('section');
 
-    if (debugRole && DEBUG_ROLE_SET.has(debugRole as TeamRole)) {
+    if (canOverrideRole && debugRole && DEBUG_ROLE_SET.has(debugRole as TeamRole)) {
       setRole(debugRole as TeamRole);
     }
 
@@ -153,21 +164,47 @@ function AppShell() {
       setTargetRequestId(debugRequestId);
     }
 
-    if (debugTab && DEBUG_TAB_SET.has(debugTab as NavItem)) {
-      setActiveTab(debugTab as NavItem);
+    if (debugTab && isDebugTab(debugTab) && canAccessTab(debugTab)) {
+      setActiveTab(debugTab);
     }
-  }, [setRole]);
+  }, [canAccessTab, canOverrideRole, setRole]);
+
+  useEffect(() => {
+    if (canAccessTab(activeTab)) return;
+
+    setSelectedCustomerId(null);
+    setTargetRequestId(null);
+    setActiveTab('dashboard');
+  }, [activeTab, canAccessTab]);
 
   const goToTab = (tab: NavItem) => {
+    if (!canAccessTab(tab)) {
+      setSelectedCustomerId(null);
+      setTargetRequestId(null);
+      setActiveTab('dashboard');
+      collapseSidebarOnMobile();
+      return;
+    }
+
     setSelectedCustomerId(null);
     setTargetRequestId(null);
     setActiveTab(tab);
+    collapseSidebarOnMobile();
   };
 
   // Enhanced navigation handler that supports customer ID and Request ID linkage
   const handleNavigate = (target: string) => {
+    collapseSidebarOnMobile();
+
     // 1. Customer Deep Link: "customers:ID"
     if (target.startsWith('customers:')) {
+      if (!canAccessTab('customers')) {
+        setSelectedCustomerId(null);
+        setTargetRequestId(null);
+        setActiveTab('dashboard');
+        return;
+      }
+
       const customerId = target.split(':')[1];
       setSelectedCustomerId(customerId);
       setTargetRequestId(null);
@@ -196,8 +233,15 @@ function AppShell() {
         setInitialSection('claims');
         setActiveTab('case-detail');
       }
-      else if (path === 'case-detail') setActiveTab('case-detail');
-      else setActiveTab(path as NavItem);
+      else if (path === 'case-detail') {
+        setActiveTab('case-detail');
+      }
+      else if (isDebugTab(path) && canAccessTab(path)) {
+        setActiveTab(path);
+      } else {
+        setTargetRequestId(null);
+        setActiveTab('dashboard');
+      }
     }
     // 3. Simple Navigation
     else {
@@ -208,7 +252,8 @@ function AppShell() {
       else if (target === 'consultation-v2') setActiveTab('consultation');
       else if (target === 'meeting-execution') setActiveTab('meeting-all');
       else if (target === 'claims') setActiveTab('claims-all');
-      else setActiveTab(target as NavItem);
+      else if (isDebugTab(target) && canAccessTab(target)) setActiveTab(target);
+      else setActiveTab('dashboard');
     }
   };
 
@@ -228,6 +273,7 @@ function AppShell() {
           />
         );
       
+      // ── 현행 메뉴 (PROD_TAB_SET) ──
       case 'consultation': return <Consultation initialRequestId={targetRequestId} />; // 전체 (type undefined)
       case 'tm-first': return <FirstTM initialRequestId={targetRequestId} />;
       case 'tm-second': return <SecondTM initialRequestId={targetRequestId} />;
@@ -284,20 +330,21 @@ function AppShell() {
       case 'dashboard': return '데이터 건전성 대시보드';
       case 'customers': return '고객 관리 ';
       case 'leads': return 'DB 배정 관리 (신청 유입)';
-      case 'requests': return '처리 현황';
+      case 'requests': return '접수 현황';
       case 'case-detail': return '케이스 상세';
+      // ── 현행 메뉴 (PROD_TAB_SET) ──
       case 'consultation': return '상담 리스트 (전체)';
       case 'tm-first': return '1차 TM (S5)';
       case 'tm-second': return '2차 TM (S6)';
       case 'tm-checklist': return 'TM 체크리스트';
-      case 'handoff': return '이관(Handoff) 관리';
+      case 'handoff': return '미팅 배정 관리';
       case 'meeting-schedule': return '미팅 스케줄 관리';
-      case 'meeting-all': return '미팅 리스트 (전체)';
+      case 'meeting-all': return '미팅 관리';
       case 'meeting-pre-analysis': return '사전 분석 (S7)';
       case 'meeting-on-site': return '미팅 실행 (S8)';
       case 'meeting-contract-close': return '계약 체결 (S9)';
       case 'contracts': return '계약 체결 및 관리';
-      case 'claims-all': return '청구 리스트 (전체)';
+      case 'claims-all': return '3년 환급';
       case 'claims-receipt': return '청구 접수 (S10)';
       case 'claims-unpaid': return '미지급금 분석 (S11)';
       case 'claims-doc-issuance': return '서류 발급 (S12)';
@@ -332,6 +379,15 @@ function AppShell() {
 
   return (
       <div className="flex h-screen w-full bg-[#F6F7F9] font-sans text-slate-900 overflow-hidden">
+        {isSidebarOpen && (
+          <button
+            type="button"
+            aria-label="사이드바 닫기"
+            onClick={() => setIsSidebarOpen(false)}
+            className="fixed inset-0 z-10 bg-slate-900/20 backdrop-blur-[1px] lg:hidden"
+          />
+        )}
+
         <Sidebar
           activeTab={activeTab}
           isSidebarOpen={isSidebarOpen}
@@ -340,24 +396,33 @@ function AppShell() {
         />
 
         {/* Main Content Area */}
-        <main className="flex-1 flex flex-col h-full overflow-hidden relative">
+        <main className="relative flex min-w-0 flex-1 flex-col h-full overflow-hidden">
           {/* Header */}
-          <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-8 shrink-0 z-10">
-            <div className="flex items-center text-slate-500 text-sm">
-              <span className="font-bold text-[#1e293b] text-lg">
-                {getHeaderTitle()}
-              </span>
-              <span className="mx-3 text-slate-300">|</span>
-              <span className="text-slate-500 font-medium">Ops System #1 (Request Centric)</span>
+          <header className="bg-white border-b border-slate-200 flex items-center justify-between gap-3 px-4 py-3 shrink-0 z-10 sm:px-6 lg:h-16 lg:px-8">
+            <div className="flex min-w-0 items-center gap-3 text-slate-500 text-sm">
+              <button
+                type="button"
+                onClick={() => setIsSidebarOpen((open) => !open)}
+                className="rounded-lg border border-slate-200 p-2 text-slate-500 transition-colors hover:bg-slate-50 lg:hidden"
+              >
+                <Menu size={18} />
+              </button>
+              <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
+                <span className="truncate font-bold text-[#1e293b] text-base sm:text-lg">
+                  {getHeaderTitle()}
+                </span>
+                <span className="hidden sm:inline text-slate-300">|</span>
+                <span className="hidden md:inline truncate text-slate-500 font-medium">Ops System #1 (Request Centric)</span>
+              </div>
             </div>
 
-            <div className="flex items-center gap-6">
-              <div className="relative hidden lg:block">
+            <div className="flex items-center gap-3 sm:gap-4 lg:gap-6">
+              <div className="relative hidden xl:block">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
                 <input
                   type="text"
                   placeholder="접수ID, 고객명, 연락처 검색..."
-                  className="pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm w-72 focus:outline-none focus:ring-2 focus:ring-[#0f766e] focus:bg-white transition-all"
+                  className="pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm w-64 2xl:w-72 focus:outline-none focus:ring-2 focus:ring-[#0f766e] focus:bg-white transition-all"
                 />
               </div>
 
@@ -366,7 +431,7 @@ function AppShell() {
                 <span className="absolute top-2 right-2 size-2 bg-amber-500 rounded-full border-2 border-white"></span>
               </button>
 
-              <div className="h-8 w-px bg-slate-200"></div>
+              <div className="hidden sm:block h-8 w-px bg-slate-200"></div>
 
               <div className="flex items-center gap-3">
                 <div className="text-right hidden sm:block">
@@ -382,7 +447,7 @@ function AppShell() {
 
           {/* Scrollable Content */}
           <div className="flex-1 overflow-auto bg-[#F6F7F9] relative">
-            <div className="p-8 min-w-[1000px] h-full">
+            <div className="h-full min-w-0 p-4 sm:p-6 lg:p-8">
               <Suspense fallback={loadingFallback}>
                 {renderContent()}
               </Suspense>

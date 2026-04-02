@@ -36,26 +36,11 @@ interface HealthCheckSectionProps {
   setMedication: (val: string) => void;
   medicationDetail: string;
   setMedicationDetail: (val: string) => void;
-  trafficAccidentRef?: React.RefObject<HTMLDivElement>;
-  surgeryRef?: React.RefObject<HTMLDivElement>;
-  criticalDiseaseRef?: React.RefObject<HTMLDivElement>;
-  medicationRef?: React.RefObject<HTMLDivElement>;
+  trafficAccidentRef?: React.RefObject<HTMLDivElement | null>;
+  surgeryRef?: React.RefObject<HTMLDivElement | null>;
+  criticalDiseaseRef?: React.RefObject<HTMLDivElement | null>;
+  medicationRef?: React.RefObject<HTMLDivElement | null>;
   highlightSection?: string | null;
-  hiraPreFill?: {
-    fetchedAt: string;
-    trafficAccident: '있음' | '없음';
-    trafficAccidentDetail: string;
-    surgery: '있음' | '없음';
-    surgeryOptions: string[];
-    criticalDisease: '있음' | '없음';
-    criticalOptions: string[];
-    medication: '있음' | '없음';
-    medicationDetail: string;
-    hasLongHospitalization: boolean;
-    longHospitalizationDetail: string;
-    hasRecentMedical: boolean;
-    recentMedicalDetail: string;
-  } | null;
 }
 
 export function HealthCheckSection(props: HealthCheckSectionProps) {
@@ -64,11 +49,11 @@ export function HealthCheckSection(props: HealthCheckSectionProps) {
     surgery, setSurgery, surgeryOptions, setSurgeryOptions, surgeryDetail, setSurgeryDetail,
     criticalDisease, setCriticalDisease, criticalOptions, setCriticalOptions, criticalDetail, setCriticalDetail,
     medication, setMedication, medicationDetail, setMedicationDetail,
-    trafficAccidentRef, surgeryRef, criticalDiseaseRef, medicationRef, highlightSection, hiraPreFill
+    trafficAccidentRef, surgeryRef, criticalDiseaseRef, medicationRef, highlightSection
   } = props;
 
-  const [surgeryDetailsMap, setSurgeryDetailsMap] = useState<Record<string, string>>(() => 
-    surgeryDetail ? { '기타': surgeryDetail } : {}
+  const [surgeryDetailsMap, setSurgeryDetailsMap] = useState<Record<string, string>>(
+    () => (surgeryDetail ? { 기타: surgeryDetail } : ({} as Record<string, string>))
   );
 
   const handleSurgeryDetailChange = (key: string, value: string) => {
@@ -115,11 +100,6 @@ export function HealthCheckSection(props: HealthCheckSectionProps) {
         <div className="flex items-center justify-between gap-2">
           <p className="text-xs font-bold text-[#314158]">병력 / 건강 확인</p>
           <div className="flex items-center gap-2">
-            {hiraPreFill && (
-              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-teal-50 text-teal-700 border border-teal-200">
-                심평원 참고
-              </span>
-            )}
             <span className={clsx(
               "inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold border",
               isComplete ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-amber-50 text-amber-700 border-amber-200"
@@ -147,26 +127,8 @@ export function HealthCheckSection(props: HealthCheckSectionProps) {
             {item.hasIssue && ' (있음)'}
           </span>
         ))}
-        {issueCount > 0 && (
-          <span className="text-[10px] text-rose-500 font-bold ml-1">
-            {issueCount}건 확인 필요
-          </span>
-        )}
+        {issueCount > 0 && <span className="text-[10px] text-rose-500 font-bold ml-1">{issueCount}건 확인 필요</span>}
       </div>
-
-      {hiraPreFill?.hasLongHospitalization && (
-        <div className="mb-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2">
-          <p className="text-[11px] font-bold text-rose-700">심평원 참고: 14일 초과 입원 이력</p>
-          <p className="mt-1 text-[10px] leading-4 text-rose-600">{hiraPreFill.longHospitalizationDetail}</p>
-        </div>
-      )}
-
-      {hiraPreFill?.hasRecentMedical && (
-        <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
-          <p className="text-[11px] font-bold text-amber-700">심평원 참고: 최근 치료 이력</p>
-          <p className="mt-1 text-[10px] leading-4 text-amber-600">{hiraPreFill.recentMedicalDetail}</p>
-        </div>
-      )}
 
       {/* Item 5: 교통사고 */}
       <div 
@@ -203,11 +165,6 @@ export function HealthCheckSection(props: HealthCheckSectionProps) {
             </button>
           </div>
         </div>
-        {hiraPreFill && (
-          <div className="mb-2 rounded border border-teal-100 bg-teal-50 px-2 py-1 text-[10px] text-teal-700">
-            심평원 참고: {hiraPreFill.trafficAccident === '있음' ? (hiraPreFill.trafficAccidentDetail || '관련 이력 있음') : '관련 이력 없음'}
-          </div>
-        )}
         {trafficAccident === '있음' && (
           <input
             type="text"
@@ -254,11 +211,6 @@ export function HealthCheckSection(props: HealthCheckSectionProps) {
             </button>
           </div>
         </div>
-        {hiraPreFill && (
-          <div className="mb-2 rounded border border-teal-100 bg-teal-50 px-2 py-1 text-[10px] text-teal-700">
-            심평원 참고: {hiraPreFill.surgery === '있음' ? (hiraPreFill.surgeryOptions.join(', ') || '관련 이력 있음') : '관련 이력 없음'}
-          </div>
-        )}
         {surgery === '있음' && (
           <div className="bg-[#f8fafc] border border-[#f1f5f9] rounded p-2 space-y-2">
             <p className="text-[10px] font-bold text-[#90a1b9] tracking-wide">상세 이력 입력</p>
@@ -421,11 +373,6 @@ export function HealthCheckSection(props: HealthCheckSectionProps) {
             </button>
           </div>
         </div>
-        {hiraPreFill && (
-          <div className="mb-2 rounded border border-teal-100 bg-teal-50 px-2 py-1 text-[10px] text-teal-700">
-            심평원 참고: {hiraPreFill.criticalDisease === '있음' ? (hiraPreFill.criticalOptions.join(', ') || '관련 이력 있음') : '관련 이력 없음'}
-          </div>
-        )}
         {criticalDisease === '있음' && (
           <div className="bg-[#f8fafc] border border-[#f1f5f9] rounded p-2 space-y-2">
             <p className="text-[10px] font-bold text-[#90a1b9] tracking-wide">상세 이력 입력</p>
@@ -558,11 +505,6 @@ export function HealthCheckSection(props: HealthCheckSectionProps) {
             </button>
           </div>
         </div>
-        {hiraPreFill && (
-          <div className="mb-2 rounded border border-teal-100 bg-teal-50 px-2 py-1 text-[10px] text-teal-700">
-            심평원 참고: {hiraPreFill.medication === '있음' ? (hiraPreFill.medicationDetail || '복용 약물 이력 있음') : '관련 이력 없음'}
-          </div>
-        )}
         {medication === '있음' && (
           <input
             type="text"
